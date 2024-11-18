@@ -75,20 +75,20 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 @dataclass
 class FinetuneConfig:
     # fmt: off
-    vla_path: str = "openvla/openvla-7b"                            # Path to OpenVLA model (on HuggingFace Hub)
+    vla_path: str = "Embodied-CoT/ecot-openvla-7b-oxe"                           # Path to OpenVLA model (on HuggingFace Hub)
 
     # Directory Paths
-    data_root_dir: Path = Path("datasets/open-x-embodiment")        # Path to Open-X dataset directory
-    dataset_name: str = "droid_wipe"                                # Name of fine-tuning dataset (e.g., `droid_wipe`)
-    run_root_dir: Path = Path("runs")                               # Path to directory to store logs & checkpoints
-    adapter_tmp_dir: Path = Path("adapter-tmp")                     # Temporary directory for LoRA weights before fusing
+    data_root_dir: Path = Path("dataset/libero/")        # Path to Open-X dataset directory
+    dataset_name: str = "libero_spatial_no_noops"                                # Name of fine-tuning dataset (e.g., `droid_wipe`)
+    run_root_dir: Path = Path("logs/")                               # Path to directory to store logs & checkpoints
+    adapter_tmp_dir: Path = Path("tmp/")                     # Temporary directory for LoRA weights before fusing
 
     # Fine-tuning Parameters
-    batch_size: int = 16                                            # Fine-tuning batch size
+    batch_size: int = 1                                          # Fine-tuning batch size
     max_steps: int = 200_000                                        # Max number of fine-tuning steps
     save_steps: int = 5000                                          # Interval for checkpoint saving
     learning_rate: float = 5e-4                                     # Fine-tuning learning rate
-    grad_accumulation_steps: int = 1                                # Gradient accumulation steps
+    grad_accumulation_steps: int = 16                                # Gradient accumulation steps
     image_aug: bool = True                                          # Whether to train with image augmentations
     shuffle_buffer_size: int = 100_000                              # Dataloader shuffle buffer size (can reduce if OOM)
     save_latest_checkpoint_only: bool = True                        # Whether to save only one checkpoint per run and
@@ -103,8 +103,8 @@ class FinetuneConfig:
                                                                     #   => CAUTION: Reduces memory but hurts performance
 
     # Tracking Parameters
-    wandb_project: str = "openvla"                                  # Name of W&B project to log to (use default!)
-    wandb_entity: str = "stanford-voltron"                          # Name of entity to log under
+    wandb_project: str = "OpenVLA"                                  # Name of W&B project to log to (use default!)
+    wandb_entity: str = "zhekaiduan2312"                          # Name of entity to log under
     run_id_note: Optional[str] = None                               # Extra note for logging, Weights & Biases
 
     # fmt: on

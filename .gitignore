@@ -153,3 +153,5 @@ rollouts/
 wandb/
 
 tmp/
+logs/
+dataset/
