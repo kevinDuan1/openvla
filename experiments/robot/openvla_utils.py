@@ -160,11 +160,14 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
             f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_label.lower()}? ASSISTANT:"
         )
     else:  # OpenVLA
-        prompt = f"In: What action should the robot take to {task_label.lower()}?\nOut:"
+        # prompt = f"In: What action should the robot take to {task_label.lower()}?\nOut:"
+        prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_label.lower()}? ASSISTANT: TASK:"
 
     # Process inputs.
     inputs = processor(prompt, image).to(DEVICE, dtype=torch.bfloat16)
 
-    # Get action.
-    action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)
+    #VLA
+    # action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, max_new_tokens=1024)
+    # Get action. ECOT
+    action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, max_new_tokens=1024)
     return action

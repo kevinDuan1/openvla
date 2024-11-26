@@ -38,6 +38,7 @@ from experiments.robot.libero.libero_utils import (
     get_libero_image,
     quat2axisangle,
     save_rollout_video,
+    save_rollot_reasoning,
 )
 from experiments.robot.openvla_utils import get_processor
 from experiments.robot.robot_utils import (
@@ -170,6 +171,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
             # Setup
             t = 0
             replay_images = []
+            replay_reasoning = []
             if cfg.task_suite_name == "libero_spatial":
                 max_steps = 220  # longest training demo has 193 steps
             elif cfg.task_suite_name == "libero_object":
@@ -216,6 +218,11 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         processor=processor,
                     )
 
+                    action, generated_ids = action
+                    generated_text = processor.batch_decode(generated_ids)[0]
+                    replay_reasoning.append(generated_text)
+                    print(generated_text)
+
                     # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
                     action = normalize_gripper_action(action, binarize=True)
 
@@ -244,7 +251,9 @@ def eval_libero(cfg: GenerateConfig) -> None:
             save_rollout_video(
                 replay_images, total_episodes, success=done, task_description=task_description, log_file=log_file
             )
-
+            save_rollot_reasoning(
+                replay_reasoning, replay_images, total_episodes, success=done, task_description=task_description, log_file=log_file
+            )
             # Log current results
             print(f"Success: {done}")
             print(f"# episodes completed so far: {total_episodes}")
