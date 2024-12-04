@@ -71,10 +71,55 @@ def get_vla(cfg):
 
     return vla
 
+def get_ecot(cfg):
+    """Loads and returns a ECOT model from checkpoint."""
+    # Load ECOT checkpoint.
+    print("[*] Instantiating Pretrained ECOT model")
+    print("[*] Loading in BF16 with Flash-Attention Enabled")
+
+    my_token = None if cfg.pretrained_checkpoint_token == "" else cfg.pretrained_checkpoint_token 
+    vla = AutoModelForVision2Seq.from_pretrained(
+        cfg.pretrained_checkpoint,
+        token=my_token,
+        attn_implementation="flash_attention_2",
+        torch_dtype=torch.bfloat16,
+        load_in_8bit=cfg.load_in_8bit,
+        load_in_4bit=cfg.load_in_4bit,
+        low_cpu_mem_usage=True,
+        trust_remote_code=True,
+    )
+
+    # Move model to device.
+    # Note: `.to()` is not supported for 8-bit or 4-bit bitsandbytes models, but the model will
+    #       already be set to the right devices and casted to the correct dtype upon loading.
+    if not cfg.load_in_8bit and not cfg.load_in_4bit:
+        vla = vla.to(DEVICE)
+
+    # Load dataset stats used during finetuning (for action un-normalization).
+    dataset_statistics_path = os.path.join(cfg.pretrained_checkpoint, "dataset_statistics.json")
+    # TODO: load norm_stats from checkpoint
+    dataset_statistics_path = "/home/yzhang/VLA/openvla/logs/ecot-openvla-7b-oxe+libero_spatial_no_noops+b4+lr-0.0005+lora-r32+dropout-0.0--image_aug/dataset_statistics.json"
+    if os.path.isfile(dataset_statistics_path):
+        with open(dataset_statistics_path, "r") as f:
+            norm_stats = json.load(f)
+        vla.norm_stats = norm_stats
+    else:
+        print(
+            "WARNING: No local dataset_statistics.json file found for current checkpoint.\n"
+            "You can ignore this if you are loading the base VLA (i.e. not fine-tuned) checkpoint."
+            "Otherwise, you may run into errors when trying to call `predict_action()` due to an absent `unnorm_key`."
+        )
+
+    return vla
+
+
 
 def get_processor(cfg):
     """Get VLA model's Hugging Face processor."""
-    processor = AutoProcessor.from_pretrained(cfg.pretrained_checkpoint, trust_remote_code=True)
+    my_token = None if cfg.pretrained_checkpoint_token == "" else cfg.pretrained_checkpoint_token 
+    processor = AutoProcessor.from_pretrained(cfg.pretrained_checkpoint, 
+                                              trust_remote_code=True,
+                                              token=my_token)
     return processor
 
 
@@ -168,3 +213,49 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
     # Get action.
     action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)
     return action
+
+def get_ecot_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, center_crop=False):
+    """Generates an action with the VLA policy."""
+    image = Image.fromarray(obs["full_image"])
+    image = image.convert("RGB")
+
+    # (If trained with image augmentations) Center crop image and then resize back up to original size.
+    # IMPORTANT: Let's say crop scale == 0.9. To get the new height and width (post-crop), multiply
+    #            the original height and width by sqrt(0.9) -- not 0.9!
+    if center_crop:
+        batch_size = 1
+        crop_scale = 0.9
+
+        # Convert to TF Tensor and record original data type (should be tf.uint8)
+        image = tf.convert_to_tensor(np.array(image))
+        orig_dtype = image.dtype
+
+        # Convert to data type tf.float32 and values between [0,1]
+        image = tf.image.convert_image_dtype(image, tf.float32)
+
+        # Crop and then resize back to original size
+        image = crop_and_resize(image, crop_scale, batch_size)
+
+        # Convert back to original data type
+        image = tf.clip_by_value(image, 0, 1)
+        image = tf.image.convert_image_dtype(image, orig_dtype, saturate=True)
+
+        # Convert back to PIL Image
+        image = Image.fromarray(image.numpy())
+        image = image.convert("RGB")
+
+    # Build ECOT prompt
+    prompt = "A chat between a curious user and an artificial intelligence assistant. " + \
+    "The assistant gives helpful, detailed, and polite answers to the user's questions. " + \
+    f"USER: What action should the robot take to {task_label.lower()}? ASSISTANT: TASK:"
+
+    # Process inputs.
+    inputs = processor(prompt, image).to(DEVICE, dtype=torch.bfloat16)
+
+    # Get action.
+    action = vla.predict_action(**inputs, 
+                                unnorm_key=unnorm_key, 
+                                do_sample=False,
+                                max_new_tokens=1024)
+    # TODO: check last action is gripper, not [0, 1]
+    return action[0]

@@ -60,6 +60,7 @@ class GenerateConfig:
     #################################################################################################################
     model_family: str = "openvla"                    # Model family
     pretrained_checkpoint: Union[str, Path] = ""     # Pretrained checkpoint path
+    pretrained_checkpoint_token: Union[str, Path] = ""     # Pretrained checkpoint path
     load_in_8bit: bool = False                       # (For OpenVLA only) Load with 8-bit quantization
     load_in_4bit: bool = False                       # (For OpenVLA only) Load with 4-bit quantization
 
@@ -104,7 +105,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
     model = get_model(cfg)
 
     # [OpenVLA] Check that the model contains the action un-normalization key
-    if cfg.model_family == "openvla":
+    if cfg.model_family == "openvla" or cfg.model_family == "ecot":
         # In some cases, the key must be manually modified (e.g. after training on a modified version of the dataset
         # with the suffix "_no_noops" in the dataset name)
         if cfg.unnorm_key not in model.norm_stats and f"{cfg.unnorm_key}_no_noops" in model.norm_stats:
@@ -113,8 +114,10 @@ def eval_libero(cfg: GenerateConfig) -> None:
 
     # [OpenVLA] Get Hugging Face processor
     processor = None
-    if cfg.model_family == "openvla":
+    if cfg.model_family == "openvla" or cfg.model_family == "ecot":
         processor = get_processor(cfg)
+    # TODO: currently load processor on transformers==4.46.2 (mani2)
+    # TODO: in future on transformers==4.40.1 (openvla)
 
     # Initialize local logging
     run_id = f"EVAL-{cfg.task_suite_name}-{cfg.model_family}-{DATE_TIME}"
