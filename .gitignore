@@ -155,3 +155,5 @@ wandb/
 tmp/
 logs/
 dataset/
+checkpoints/
+modified_libero_rlds/

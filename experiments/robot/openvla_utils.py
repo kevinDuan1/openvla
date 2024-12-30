@@ -68,6 +68,15 @@ def get_vla(cfg):
             "You can ignore this if you are loading the base VLA (i.e. not fine-tuned) checkpoint."
             "Otherwise, you may run into errors when trying to call `predict_action()` due to an absent `unnorm_key`."
         )
+    
+    # # M: temporal solution for LIBERO
+    # # TODO: load norm_stats from checkpoint
+    dataset_statistics_path = "/home/yzhang/openvla/checkpoints/dataset_statistics_zk.json"
+    if os.path.isfile(dataset_statistics_path):
+        with open(dataset_statistics_path, "r") as f:
+            norm_stats = json.load(f)
+        vla.norm_stats = norm_stats
+        print('LIBERO norm_stats loaded from file')
 
     return vla
 
@@ -124,7 +133,7 @@ def crop_and_resize(image, crop_scale, batch_size):
     return image
 
 
-def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, center_crop=False):
+def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, center_crop=False, max_new_tokens=1024, polish_prompt=True):
     """Generates an action with the VLA policy."""
     image = Image.fromarray(obs["full_image"])
     image = image.convert("RGB")
@@ -155,13 +164,16 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         image = image.convert("RGB")
 
     # Build VLA prompt
-    if "openvla-v01" in base_vla_name:  # OpenVLA v0.1
-        prompt = (
-            f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_label.lower()}? ASSISTANT:"
-        )
-    else:  # OpenVLA
-        # prompt = f"In: What action should the robot take to {task_label.lower()}?\nOut:"
-        prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_label.lower()}? ASSISTANT: TASK:"
+    if polish_prompt:
+        if "openvla-v01" in base_vla_name:  # OpenVLA v0.1
+            prompt = (
+                f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_label.lower()}? ASSISTANT:"
+            )
+        else:  # OpenVLA
+            # prompt = f"In: What action should the robot take to {task_label.lower()}?\nOut:"
+            prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_label.lower()}? ASSISTANT: TASK:"
+    else: 
+        prompt = task_label
 
     # Process inputs.
     inputs = processor(prompt, image).to(DEVICE, dtype=torch.bfloat16)
@@ -169,5 +181,5 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
     #VLA
     # action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, max_new_tokens=1024)
     # Get action. ECOT
-    action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, max_new_tokens=1024)
+    action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, max_new_tokens=max_new_tokens)
     return action
