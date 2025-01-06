@@ -1,5 +1,4 @@
 """Utils for evaluating policies in LIBERO simulation environments."""
-
 import math
 import os
 
@@ -16,7 +15,6 @@ from experiments.robot.robot_utils import (
     DATE,
     DATE_TIME,
 )
-
 
 def get_libero_env(task, model_family, resolution=256):
     """Initializes and returns the LIBERO environment, along with the task description."""
@@ -48,7 +46,6 @@ def resize_image(img, resize_size):
     img = tf.cast(tf.clip_by_value(tf.round(img), 0, 255), tf.uint8)
     img = img.numpy()
     return img
-
 
 def get_libero_image(obs, resize_size):
     """Extracts image from observations and preprocesses it."""
@@ -259,7 +256,6 @@ def get_metadata(reasoning):
                 # Handle malformed data gracefully
                 print(f"Warning: Skipping malformed data for object {obj}: {sample}")
                 continue
-
     return metadata
 
 def resize_pos(pos, img_size):

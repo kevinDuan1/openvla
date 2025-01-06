@@ -18,13 +18,11 @@ Run with:
                                     --run_root_dir <PATH/TO/LOGS/DIR> \
                                     ...
 """
-
 import os
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
-
 import draccus
 import torch
 import torch.distributed as dist
@@ -51,8 +49,6 @@ from prismatic.extern.hf.processing_prismatic import PrismaticImageProcessor, Pr
 
 # Sane Defaults
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-
 # # === Utilities ===
 # # fmt: off
 # def create_vision_transform(vla: nn.Module, input_size: int) -> Callable[[Image.Image], torch.Tensor]:
@@ -92,21 +88,18 @@ class FinetuneConfig:
     image_aug: bool = True                                          # Whether to train with image augmentations
     shuffle_buffer_size: int = 100_000                              # Dataloader shuffle buffer size (can reduce if OOM)
     save_latest_checkpoint_only: bool = True                        # Whether to save only one checkpoint per run and
-                                                                    #   continually overwrite the latest checkpoint
-                                                                    #   (If False, saves all checkpoints)
-
+                                                                    # continually overwrite the latest checkpoint 
+                                                                    #  (If False, saves all checkpoints)
     # LoRA Arguments
     use_lora: bool = True                                           # Whether to use LoRA fine-tuning
     lora_rank: int = 32                                             # Rank of LoRA weight matrix
     lora_dropout: float = 0.0                                       # Dropout applied to LoRA weights
     use_quantization: bool = False                                  # Whether to 4-bit quantize VLA for LoRA fine-tuning
                                                                     #   => CAUTION: Reduces memory but hurts performance
-
     # Tracking Parameters
     wandb_project: str = "OpenVLA"                                  # Name of W&B project to log to (use default!)
     wandb_entity: str = "zhekaiduan2312"                          # Name of entity to log under
     run_id_note: Optional[str] = None                               # Extra note for logging, Weights & Biases
-
     # fmt: on
 
 
