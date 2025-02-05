@@ -51,6 +51,9 @@ from experiments.robot.robot_utils import (
     set_seed_everywhere,
 )
 
+# M: this prompt manager is specifically designed for ECoT
+from experiments.robot.openvla_utils import PromptManager
+from experiments.robot.openvla_utils import hf_to_vllm 
 
 @dataclass
 class GenerateConfig:
@@ -63,6 +66,7 @@ class GenerateConfig:
     pretrained_checkpoint: Union[str, Path] = ""     # Pretrained checkpoint path
     load_in_8bit: bool = False                       # (For OpenVLA only) Load with 8-bit quantization
     load_in_4bit: bool = False                       # (For OpenVLA only) Load with 4-bit quantization
+    use_vllm: bool = True 
 
     center_crop: bool = True                         # Center crop? (if trained w/ random crop image aug)
 
@@ -116,6 +120,8 @@ def eval_libero(cfg: GenerateConfig) -> None:
     processor = None
     if cfg.model_family == "openvla":
         processor = get_processor(cfg)
+        if cfg.use_vllm:
+            model = hf_to_vllm(model, processor, cfg)
 
     # Initialize local logging
     run_id = f"EVAL-{cfg.task_suite_name}-{cfg.model_family}-{DATE_TIME}"
@@ -169,8 +175,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
             obs = env.set_init_state(initial_states[episode_idx])
 
             # M: batch preprations
-            phases = ["TASK", "PLAN", "VISIBLE OBJECTS", "SUBTASK REASONING", "SUBTASK", "MOVE REASONING", "MOVE", "GRIPPER POSITION", "ACTION"]
-            phases_history = {key: [] for key in phases}
+            prompt_manager = PromptManager()
 
             # Setup
             t = 0
@@ -214,7 +219,8 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         ),
                     }
                     
-                    # M: start to predict actions
+                    # M: first step to predict full CoT
+                    # (a way to initialize the history, but can be done in other ways)
                     if t == cfg.num_steps_wait:
 
                         # Query model to get action
@@ -225,69 +231,34 @@ def eval_libero(cfg: GenerateConfig) -> None:
                             task_description,
                             processor=processor,
                         )
-
                         action, generated_ids = action
                         generated_text = processor.batch_decode(generated_ids)[0]
-                        replay_reasoning.append(generated_text)
-                        # print(generated_text)
 
-                        # M: Update phases history
-                        for phase_id, phase in enumerate(phases):
-                            start_idx = generated_text.find(phase + ': ') + len(phase) + 2 
-                            if phase_id < len(phases) - 1:
-                                end_idx = generated_text.find(phases[phase_id+1] + ': ') 
-                            else:
-                                end_idx = len(generated_text)
-                            # TODO: assert start_idx, end_idx
-                            if start_idx >= end_idx:
-                                phases_history[phase].append('')
-                            else:
-                                phases_history[phase].append(generated_text[start_idx:end_idx])
-                        # print("\nphase history at first prediction", phases_history, "\n")
+                        # M: Update prompt history
+                        prompt_manager.update_history(generated_text)
 
                     else:
-                        # TODO: predict in batch
-                        # TODO: cache kvs if possible
-                        OPENVLA_V01_SYSTEM_PROMPT = (
-                            "A chat between a curious user and an artificial intelligence assistant. "
-                            "The assistant gives helpful, detailed, and polite answers to the user's questions."
+                        prompts = prompt_manager.generate_prompts(task_description)
+                        # Query model to get action
+                        action = get_action(
+                            cfg,
+                            model,
+                            observation,
+                            task_description,
+                            processor=processor,
+                            prompts=prompts, 
+                            max_new_tokens=50,
                         )
-                        prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_description.lower()}? ASSISTANT: "
-                        for phase_id, phase in enumerate(phases):
-                            # Query model to get action
-                            prompt += f'{phase}: '
-                            # print(f"PHASE: {phase_id}-{phase} PROMPT: {prompt}")
-                            action, generated_ids = get_action(
-                                cfg,
-                                model,
-                                observation,
-                                prompt,
-                                processor=processor,
-                                max_new_tokens=100, # TODO: should specify how long to predict
-                                polish_prompt=False,
-                            )
-                            generated_text = processor.batch_decode(generated_ids)[0]
-                            # print('\n---', generated_text)
+                        action, generated_ids = action
+                        generated_texts = processor.batch_decode(generated_ids)
 
-                            # Predict
-                            prompt += phases_history[phase][-1]
+                        # M: Update prompt history
+                        for i, generated_text in enumerate(generated_texts[:-1]):
+                            prompt_manager.update_history(generated_text, i)
+                        generated_text = generated_texts[-1]
 
-                            # Update phases history
-
-                            start_idx = generated_text.find(phase + ': ') + len(phase) + 2 
-                            if phase_id < len(phases) - 1:
-                                end_idx = generated_text.find(phases[phase_id+1] + ': ') 
-                            else:
-                                end_idx = len(generated_text)
-                            # TODO: assert start_idx, end_idx
-                            if start_idx >= end_idx:
-                                phases_history[phase].append('')
-                                # phases_history[phase].append(phases_history[phase][-1])
-                            else:
-                                phases_history[phase].append(generated_text[start_idx:end_idx])
-                            # print(f"\nPhase History Updated: {phases_history[phase][-2]} -> {phases_history[phase][-1]}\n")
-
-                        replay_reasoning.append(generated_text)
+                    # Save reasoning results
+                    replay_reasoning.append(generated_text)
 
                     # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
                     action = normalize_gripper_action(action, binarize=True)
@@ -304,7 +275,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         total_successes += 1
                         break
                     t += 1
-
 
                 except Exception as e:
                     print(f"Caught exception: {e}")
