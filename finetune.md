@@ -4,7 +4,7 @@
 |------|-------------|------|---------|----------|
 | `openvla` | 85.8 | `string` | `""` | `true` w|
 <!-- | `age` | Age of the user | `number` | `0` | `false` |
-| `email` | Email of the user | `string` | `""` | `true` | -->·
+| `email` | Email of the user | `string` | `""` | `true` | -->·`
 
 code session:
 ```
