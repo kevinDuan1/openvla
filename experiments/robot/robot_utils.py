@@ -60,12 +60,12 @@ def get_image_resize_size(cfg):
     return resize_size
 
 
-def get_action(cfg, model, obs, task_label, processor=None, max_new_tokens=1024, polish_prompt=True):
+def get_action(cfg, model, obs, task_label, processor=None, max_new_tokens=1024, prompts=None):
     """Queries the model to get an action."""
     if cfg.model_family == "openvla":
         action = get_vla_action(
             model, processor, cfg.pretrained_checkpoint, obs, task_label, cfg.unnorm_key, center_crop=cfg.center_crop, max_new_tokens=max_new_tokens,
-            polish_prompt=polish_prompt,
+            prompts=prompts,
         )
         # assert action.shape == (ACTION_DIM,)
     else:
