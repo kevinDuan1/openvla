@@ -190,6 +190,9 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
 
     # 3. VLLM inference
     if hasattr(vla, 'use_vllm') and vla.use_vllm:
+
+        import vllm # only executed once
+
         if prompts is None: prompts = [prompt]
         inputs = [processor.tokenizer(p, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE) for p in prompts]
         pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(DEVICE, dtype=torch.bfloat16)
