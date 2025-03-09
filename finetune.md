@@ -27,7 +27,15 @@ Run evaluation in simulation:
 ```
  python experiments/robot/libero/run_libero_eval.py \
   --model_family openvla \
-  --pretrained_checkpoint "logs/ecot-openvla-7b-oxe+libero_spatial_no_noops+b16+lr-0.0005+lora-r32+dropout-0.0--image_aug"\
-  --task_suite_name libero_spatial \
+  --pretrained_checkpoint /home/zhekai/code/embodied-CoT/outputs/ecot-openvla-7b-oxe+libero_object_no_noops+b1+lr-0.0005+lora-r32+dropout-0.0 \
+  --task_suite_name libero_object \
+  --center_crop True \
+  --reasoning True
+
+export CUDA_VISIBLE_DEVICES=1
+  python experiments/robot/libero/run_libero_eval.py \
+  --model_family openvla \
+  --pretrained_checkpoint openvla/openvla-7b-finetuned-libero-object \
+  --task_suite_name libero_object \
   --center_crop True
 ```

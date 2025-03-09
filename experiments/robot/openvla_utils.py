@@ -17,7 +17,7 @@ from prismatic.extern.hf.modeling_prismatic import OpenVLAForActionPrediction
 from prismatic.extern.hf.processing_prismatic import PrismaticImageProcessor, PrismaticProcessor
 
 # TODO: import only when config is set
-from vllm import LLM, SamplingParams
+
 
 # Initialize important constants and pretty-printing mode in NumPy.
 ACTION_DIM = 7
@@ -34,6 +34,7 @@ OPENVLA_V01_SYSTEM_PROMPT = (
 
 
 def get_vla(cfg):
+    
     """Loads and returns a VLA model from checkpoint."""
     # Load VLA checkpoint.
     print("[*] Instantiating Pretrained VLA model")
@@ -73,15 +74,21 @@ def get_vla(cfg):
             "You can ignore this if you are loading the base VLA (i.e. not fine-tuned) checkpoint."
             "Otherwise, you may run into errors when trying to call `predict_action()` due to an absent `unnorm_key`."
         )
+    return vla
     
 
 def hf_to_vllm(vla, processor, cfg):
 
+    if cfg.use_vllm:
+        from vllm import LLM, SamplingParams
     # Get imbeddings
     vla.input_embds = vla.language_model.get_input_embeddings()
 
     # Save language model 
-    vllm_model_path = f'logs/{cfg.pretrained_checkpoint.replace('/', '_')}-vllm'
+
+    # Compute the modified checkpoint string first
+    checkpoint_str = cfg.pretrained_checkpoint.replace('/', '_')
+    vllm_model_path = f'logs/{checkpoint_str}-vllm'
     if not os.path.exists(vllm_model_path):
         vla.language_model.save_pretrained(vllm_model_path)
         processor.save_pretrained(vllm_model_path)
@@ -146,7 +153,7 @@ def crop_and_resize(image, crop_scale, batch_size):
     return image
 
 
-def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, center_crop=False, max_new_tokens=1024, prompts=None):
+def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, center_crop=False, max_new_tokens=None, prompts=None, use_vllm=False):
     """Generates an action with the VLA policy."""
 
     # 1. Process image
@@ -188,7 +195,7 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_label.lower()}? ASSISTANT: TASK:"
 
     # 3. VLLM inference
-    if isinstance(vla.language_model, LLM):
+    if use_vllm:
         if prompts is None: prompts = [prompt]
         inputs = [processor.tokenizer(p, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE) for p in prompts]
         pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(DEVICE, dtype=torch.bfloat16)
@@ -230,7 +237,10 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
     # VLA
     # action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, max_new_tokens=1024)
     # ECOT
-    action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, use_cache=True, max_new_tokens=max_new_tokens)
+    if max_new_tokens is not None:
+        action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, use_cache=True, max_new_tokens=max_new_tokens)
+    else:
+        action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, use_cache=True)
     return action
 
 

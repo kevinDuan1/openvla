@@ -71,7 +71,7 @@ class GenerateConfig:
     #################################################################################################################
     task_suite_name: str = "libero_spatial"          # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
     num_steps_wait: int = 10                         # Number of steps to wait for objects to stabilize in sim
-    num_trials_per_task: int = 50                    # Number of rollouts per task
+    num_trials_per_task: int = 5                    # Number of rollouts per task
 
     #################################################################################################################
     # Utils
@@ -83,8 +83,9 @@ class GenerateConfig:
     wandb_project: str = "YOUR_WANDB_PROJECT"        # Name of W&B project to log to (use default!)
     wandb_entity: str = "YOUR_WANDB_ENTITY"          # Name of entity to log under
 
-    seed: int = 7                                    # Random Seed (for reproducibility)
-
+    seed: int = 1                                    # Random Seed (for reproducibility)
+    use_vllm: bool = False                           # Use VLLM for action generation
+    reasoning: bool = False                            # Use reasoning for action generation
     # fmt: on
 
 
@@ -186,7 +187,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
             print(f"Starting episode {task_episodes+1}...")
             log_file.write(f"Starting episode {task_episodes+1}...\n")
             while t < max_steps + cfg.num_steps_wait:
-                try:
+                # try:
                     # IMPORTANT: Do nothing for the first few timesteps because the simulator drops objects
                     # and we need to wait for them to fall
                     if t < cfg.num_steps_wait:
@@ -209,6 +210,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         ),
                     }
 
+
                     # Query model to get action
                     action = get_action(
                         cfg,
@@ -217,15 +219,16 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         task_description,
                         processor=processor,
                     )
-
-                    action, generated_ids = action
-                    generated_text = processor.batch_decode(generated_ids)[0]
-                    replay_reasoning.append(generated_text)
-                    print(generated_text)
-
+                    if cfg.reasoning:
+                        action, generated_ids = action
+                        generated_text = processor.batch_decode(generated_ids)[0]
+                        replay_reasoning.append(generated_text)
+                        print(generated_text)
+                    
+                      
                     # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
                     action = normalize_gripper_action(action, binarize=True)
-
+                    print(f"Action: {action}")
                     # [OpenVLA] The dataloader flips the sign of the gripper action to align with other datasets
                     # (0 = close, 1 = open), so flip it back (-1 = open, +1 = close) before executing the action
                     if cfg.model_family == "openvla":
@@ -239,10 +242,10 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         break
                     t += 1
 
-                except Exception as e:
-                    print(f"Caught exception: {e}")
-                    log_file.write(f"Caught exception: {e}\n")
-                    break
+                # except Exception as e:
+                #     print(f"Caught exception: {e}")
+                #     log_file.write(f"Caught exception: {e}\n")
+                #     break
 
             task_episodes += 1
             total_episodes += 1
