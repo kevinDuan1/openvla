@@ -261,6 +261,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
 
                     # Save reasoning results
                     replay_reasoning.append(generated_text)
+                    print(generated_text)
 
                     # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
                     action = normalize_gripper_action(action, binarize=True)
