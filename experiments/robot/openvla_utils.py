@@ -16,8 +16,6 @@ from prismatic.extern.hf.configuration_prismatic import OpenVLAConfig
 from prismatic.extern.hf.modeling_prismatic import OpenVLAForActionPrediction
 from prismatic.extern.hf.processing_prismatic import PrismaticImageProcessor, PrismaticProcessor
 
-# TODO: import only when config is set
-from vllm import LLM, SamplingParams
 
 # Initialize important constants and pretty-printing mode in NumPy.
 ACTION_DIM = 7
@@ -73,6 +71,8 @@ def get_vla(cfg):
             "You can ignore this if you are loading the base VLA (i.e. not fine-tuned) checkpoint."
             "Otherwise, you may run into errors when trying to call `predict_action()` due to an absent `unnorm_key`."
         )
+
+    return vla
     
 
 def hf_to_vllm(vla, processor, cfg):
@@ -183,12 +183,14 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         prompt = (
             f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_label.lower()}? ASSISTANT:"
         )
-    else:  # OpenVLA
-        # prompt = f"In: What action should the robot take to {task_label.lower()}?\nOut:"
+    elif "ecot" in base_vla_name: # ECoT
         prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_label.lower()}? ASSISTANT: TASK:"
+    else:  # OpenVLA 
+        prompt = f"In: What action should the robot take to {task_label.lower()}?\nOut:"
 
     # 3. VLLM inference
-    if isinstance(vla.language_model, LLM):
+    if vla.use_vllm:
+        from vllm import LLM, SamplingParams
         if prompts is None: prompts = [prompt]
         inputs = [processor.tokenizer(p, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE) for p in prompts]
         pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(DEVICE, dtype=torch.bfloat16)
@@ -221,18 +223,21 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         # --------------------------------------------------
         return actions, generated_ids
 
-    # 4. HF inference
-    if prompts:
+    # 3. - HF inference
+    # Process inputs
+    if prompts: # batch style
         processor.tokenizer.padding_side = 'left'
         inputs = processor(prompts, [image]*len(prompts), padding=True).to(DEVICE, dtype=torch.bfloat16)
-    else:
+    else: 
         inputs = processor(prompt, image).to(DEVICE, dtype=torch.bfloat16)
-    # VLA
-    # action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, max_new_tokens=1024)
-    # ECOT
-    action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, use_cache=True, max_new_tokens=max_new_tokens)
-    return action
 
+    # Get action
+    if 'ecot' in base_vla_name: # ECoT
+       action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, use_cache=True, max_new_tokens=max_new_tokens)
+       return action # action, generated_ids
+    else: # OpenVLA
+        action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)
+        return action, [[]]
 
 # M: batch prediction
 class CotTag(enum.Enum):
