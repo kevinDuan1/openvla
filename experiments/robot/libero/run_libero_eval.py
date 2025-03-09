@@ -219,11 +219,10 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         task_description,
                         processor=processor,
                     )
-                    if cfg.reasoning:
-                        action, generated_ids = action
-                        generated_text = processor.batch_decode(generated_ids)[0]
-                        replay_reasoning.append(generated_text)
-                        print(generated_text)
+                    action, generated_ids = action
+                    generated_text = processor.batch_decode(generated_ids)[0]
+                    replay_reasoning.append(generated_text)
+                    print(generated_text)
                     
                       
                     # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
