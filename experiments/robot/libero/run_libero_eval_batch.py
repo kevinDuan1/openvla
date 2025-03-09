@@ -259,6 +259,11 @@ def eval_libero(cfg: GenerateConfig) -> None:
 
                     # Save reasoning results
                     replay_reasoning.append(generated_text)
+<<<<<<< HEAD
+=======
+                    print(generated_text)
+
+>>>>>>> 4ba01d4a10ddd2d58220629e795e1b380aba42ff
                     # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
                     action = normalize_gripper_action(action, binarize=True)
                     # [OpenVLA] The dataloader flips the sign of the gripper action to align with other datasets

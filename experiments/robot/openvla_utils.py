@@ -78,8 +78,13 @@ def get_vla(cfg):
 
 def hf_to_vllm(vla, processor, cfg):
 
+<<<<<<< HEAD
     if cfg.use_vllm:
         from vllm import LLM, SamplingParams
+=======
+    import vllm
+
+>>>>>>> 4ba01d4a10ddd2d58220629e795e1b380aba42ff
     # Get imbeddings
     vla.input_embds = vla.language_model.get_input_embeddings()
 
@@ -93,7 +98,7 @@ def hf_to_vllm(vla, processor, cfg):
     if hasattr(vla, "language_model"):
         del vla.language_model
     # TODO: check vllm load mode, check settings, memory
-    vla.language_model = LLM(vllm_model_path, trust_remote_code=True, gpu_memory_utilization=0.7)
+    vla.language_model = vllm.LLM(vllm_model_path, trust_remote_code=True, gpu_memory_utilization=0.7)
     return vla
 
 
@@ -192,11 +197,15 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         prompt = f"In: What action should the robot take to {task_label.lower()}?\nOut:"
 
     # 3. VLLM inference
+<<<<<<< HEAD
     if isinstance(vla.language_model, LLM):
+=======
+    if hasattr(vla, 'use_vllm') and vla.use_vllm:
+>>>>>>> 4ba01d4a10ddd2d58220629e795e1b380aba42ff
         if prompts is None: prompts = [prompt]
         inputs = [processor.tokenizer(p, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE) for p in prompts]
         pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(DEVICE, dtype=torch.bfloat16)
-        sampling_params = SamplingParams(temperature=0, max_tokens=max_new_tokens)
+        sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens)
         # TODO: check vllm inference parameters 
         outputs = vla.vllm_inference(input_ids=inputs, pixel_values=pixel_values, sampling_params=sampling_params)
 
