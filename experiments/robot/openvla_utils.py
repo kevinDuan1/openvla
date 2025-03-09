@@ -17,7 +17,7 @@ from prismatic.extern.hf.modeling_prismatic import OpenVLAForActionPrediction
 from prismatic.extern.hf.processing_prismatic import PrismaticImageProcessor, PrismaticProcessor
 
 # TODO: import only when config is set
-
+from vllm import LLM, SamplingParams
 
 # Initialize important constants and pretty-printing mode in NumPy.
 ACTION_DIM = 7
@@ -74,7 +74,6 @@ def get_vla(cfg):
             "You can ignore this if you are loading the base VLA (i.e. not fine-tuned) checkpoint."
             "Otherwise, you may run into errors when trying to call `predict_action()` due to an absent `unnorm_key`."
         )
-    return vla
     
 
 def hf_to_vllm(vla, processor, cfg):
@@ -85,10 +84,7 @@ def hf_to_vllm(vla, processor, cfg):
     vla.input_embds = vla.language_model.get_input_embeddings()
 
     # Save language model 
-
-    # Compute the modified checkpoint string first
-    checkpoint_str = cfg.pretrained_checkpoint.replace('/', '_')
-    vllm_model_path = f'logs/{checkpoint_str}-vllm'
+    vllm_model_path = f'logs/{cfg.pretrained_checkpoint.replace('/', '_')}-vllm'
     if not os.path.exists(vllm_model_path):
         vla.language_model.save_pretrained(vllm_model_path)
         processor.save_pretrained(vllm_model_path)
@@ -190,12 +186,13 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         prompt = (
             f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_label.lower()}? ASSISTANT:"
         )
-    else:  # OpenVLA
-        # prompt = f"In: What action should the robot take to {task_label.lower()}?\nOut:"
+    elif "ecot" in base_vla_name: # ECoT
         prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_label.lower()}? ASSISTANT: TASK:"
+    else:  # OpenVLA 
+        prompt = f"In: What action should the robot take to {task_label.lower()}?\nOut:"
 
     # 3. VLLM inference
-    if use_vllm:
+    if isinstance(vla.language_model, LLM):
         if prompts is None: prompts = [prompt]
         inputs = [processor.tokenizer(p, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE) for p in prompts]
         pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(DEVICE, dtype=torch.bfloat16)
@@ -228,19 +225,17 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         # --------------------------------------------------
         return actions, generated_ids
 
-    # 4. HF inference
-    if prompts:
+    # 3. - HF inference
+    # Process inputs
+    if prompts: # batch style
         processor.tokenizer.padding_side = 'left'
         inputs = processor(prompts, [image]*len(prompts), padding=True).to(DEVICE, dtype=torch.bfloat16)
-    else:
+    else: 
         inputs = processor(prompt, image).to(DEVICE, dtype=torch.bfloat16)
     # VLA
     # action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, max_new_tokens=1024)
     # ECOT
-    if max_new_tokens is not None:
-        action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, use_cache=True, max_new_tokens=max_new_tokens)
-    else:
-        action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, use_cache=True)
+    action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, use_cache=True, max_new_tokens=max_new_tokens)
     return action
 
 

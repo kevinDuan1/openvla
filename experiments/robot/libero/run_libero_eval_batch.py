@@ -66,7 +66,7 @@ class GenerateConfig:
     pretrained_checkpoint: Union[str, Path] = ""     # Pretrained checkpoint path
     load_in_8bit: bool = False                       # (For OpenVLA only) Load with 8-bit quantization
     load_in_4bit: bool = False                       # (For OpenVLA only) Load with 4-bit quantization
-    use_vllm: bool = True 
+    use_vllm: bool = False 
 
     center_crop: bool = True                         # Center crop? (if trained w/ random crop image aug)
 
@@ -122,6 +122,8 @@ def eval_libero(cfg: GenerateConfig) -> None:
         processor = get_processor(cfg)
         if cfg.use_vllm:
             model = hf_to_vllm(model, processor, cfg)
+            model.use_vllm = True
+        else: model.use_vllm = False
 
     # Initialize local logging
     run_id = f"EVAL-{cfg.task_suite_name}-{cfg.model_family}-{DATE_TIME}"
