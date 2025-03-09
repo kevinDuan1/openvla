@@ -285,7 +285,6 @@ class PromptManager(object):
             if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
                 subtask_text =  generated_text[start_idx+len(cottag_list[i].value):end_idx]
                 self.subtask_history[cottag_list[i].name].append(subtask_text)
-            # TODO: check corner cases
 
 
     def generate_prompts(self, task_description):

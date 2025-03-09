@@ -187,7 +187,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
             print(f"Starting episode {task_episodes+1}...")
             log_file.write(f"Starting episode {task_episodes+1}...\n")
             while t < max_steps + cfg.num_steps_wait:
-                # try:
+                try:
                     # IMPORTANT: Do nothing for the first few timesteps because the simulator drops objects
                     # and we need to wait for them to fall
                     if t < cfg.num_steps_wait:
@@ -242,10 +242,10 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         break
                     t += 1
 
-                # except Exception as e:
-                #     print(f"Caught exception: {e}")
-                #     log_file.write(f"Caught exception: {e}\n")
-                #     break
+                except Exception as e:
+                    print(f"Caught exception: {e}")
+                    log_file.write(f"Caught exception: {e}\n")
+                    break
 
             task_episodes += 1
             total_episodes += 1

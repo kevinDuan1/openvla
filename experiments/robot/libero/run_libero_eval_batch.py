@@ -75,7 +75,7 @@ class GenerateConfig:
     #################################################################################################################
     task_suite_name: str = "libero_spatial"          # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
     num_steps_wait: int = 10                         # Number of steps to wait for objects to stabilize in sim
-    num_trials_per_task: int = 50                    # Number of rollouts per task
+    num_trials_per_task: int = 5                    # Number of rollouts per task
 
     #################################################################################################################
     # Utils
@@ -88,8 +88,8 @@ class GenerateConfig:
     wandb_entity: str = "YOUR_WANDB_ENTITY"          # Name of entity to log under
 
     seed: int = 7                                    # Random Seed (for reproducibility)
-
-    # fmt: on
+    use_vllm: bool = True 
+    reasoning: bool = True  # fmt: on
 
 
 @draccus.wrap()
@@ -176,7 +176,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
 
             # M: batch preprations
             prompt_manager = PromptManager()
-
             # Setup
             t = 0
             replay_images = []
@@ -233,7 +232,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         )
                         action, generated_ids = action
                         generated_text = processor.batch_decode(generated_ids)[0]
-
                         # M: Update prompt history
                         prompt_manager.update_history(generated_text)
 
@@ -259,10 +257,8 @@ def eval_libero(cfg: GenerateConfig) -> None:
 
                     # Save reasoning results
                     replay_reasoning.append(generated_text)
-
                     # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
                     action = normalize_gripper_action(action, binarize=True)
-
                     # [OpenVLA] The dataloader flips the sign of the gripper action to align with other datasets
                     # (0 = close, 1 = open), so flip it back (-1 = open, +1 = close) before executing the action
                     if cfg.model_family == "openvla":

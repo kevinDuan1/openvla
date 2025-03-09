@@ -38,4 +38,5 @@ export CUDA_VISIBLE_DEVICES=1
   --pretrained_checkpoint openvla/openvla-7b-finetuned-libero-object \
   --task_suite_name libero_object \
   --center_crop True
+
 ```
