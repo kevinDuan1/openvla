@@ -66,7 +66,6 @@ class GenerateConfig:
     pretrained_checkpoint: Union[str, Path] = ""     # Pretrained checkpoint path
     load_in_8bit: bool = False                       # (For OpenVLA only) Load with 8-bit quantization
     load_in_4bit: bool = False                       # (For OpenVLA only) Load with 4-bit quantization
-    use_vllm: bool = False 
 
     center_crop: bool = True                         # Center crop? (if trained w/ random crop image aug)
 
@@ -88,7 +87,7 @@ class GenerateConfig:
     wandb_entity: str = "YOUR_WANDB_ENTITY"          # Name of entity to log under
 
     seed: int = 7                                    # Random Seed (for reproducibility)
-    use_vllm: bool = True 
+    use_vllm: bool = False
 
     # fmt: on
 
