@@ -229,14 +229,14 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
     # Process inputs
     if prompts: # batch style
         processor.tokenizer.padding_side = 'left'
-        inputs = processor(prompts, [image]*len(prompts), padding=True).to(DEVICE, dtype=torch.bfloat16)
+        inputs = processor(prompts, image, padding=True).to(DEVICE, dtype=torch.bfloat16)
     else: 
         inputs = processor(prompt, image).to(DEVICE, dtype=torch.bfloat16)
 
     # Get action
     if 'ecot' in base_vla_name: # ECoT
-       action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, use_cache=True, max_new_tokens=max_new_tokens)
-       return action # action, generated_ids
+        action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, use_cache=True, max_new_tokens=max_new_tokens)
+        return action # action, generated_ids
     else: # OpenVLA
         action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)
         return action, [[]]
