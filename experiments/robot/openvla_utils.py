@@ -18,7 +18,7 @@ from prismatic.extern.hf.processing_prismatic import PrismaticImageProcessor, Pr
 
 # Initialize important constants and pretty-printing mode in NumPy.
 ACTION_DIM = 7
-DATE = time.strftime("%Y_%m_%d")
+DATE = time.strftime("%Y_%m_%d-%H_%M_%S")
 DATE_TIME = time.strftime("%Y_%m_%d-%H_%M_%S")
 DEVICE = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 np.set_printoptions(formatter={"float": lambda x: "{0:0.3f}".format(x)})
@@ -34,7 +34,7 @@ def get_vla(cfg):
     """Loads and returns a VLA model from checkpoint."""
     # Load VLA checkpoint.
     print("[*] Instantiating Pretrained VLA model")
-    print("[*] Loading in BF16 with Flash-Attention Enabled")
+    # print("[*] Loading in BF16 with Flash-Attention Enabled")
 
     # Register OpenVLA model to HF Auto Classes (not needed if the model is on HF Hub)
     AutoConfig.register("openvla", OpenVLAConfig)
@@ -44,7 +44,7 @@ def get_vla(cfg):
 
     vla = AutoModelForVision2Seq.from_pretrained(
         cfg.pretrained_checkpoint,
-        attn_implementation="flash_attention_2",
+        # attn_implementation="flash_attention_2",
         torch_dtype=torch.bfloat16,
         load_in_8bit=cfg.load_in_8bit,
         load_in_4bit=cfg.load_in_4bit,
@@ -229,7 +229,7 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
     # Process inputs
     if prompts: # batch style
         processor.tokenizer.padding_side = 'left'
-        inputs = processor(prompts, [image]*len(prompts), padding=True).to(DEVICE, dtype=torch.bfloat16)
+        inputs = processor(prompts, image, padding=True).to(DEVICE, dtype=torch.bfloat16)
     else: 
         inputs = processor(prompt, image).to(DEVICE, dtype=torch.bfloat16)
 

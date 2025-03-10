@@ -249,7 +249,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
                             task_description,
                             processor=processor,
                             prompts=prompts, 
-                            max_new_tokens=50,
+                            max_new_tokens=60,
                         )
                         action, generated_ids = action
                         generated_texts = processor.batch_decode(generated_ids)
