@@ -1,7 +1,7 @@
 install vllm
 ```
-conda create -n vllm-v1 python=3.12 -y
-conda activate vllm-v1
+conda create -n vllm python=3.12 -y
+conda activate vllm
 
 git clone https://github.com/kevinDuan1/vllm.git
 cd vllm

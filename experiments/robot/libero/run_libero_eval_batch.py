@@ -66,8 +66,8 @@ class GenerateConfig:
     pretrained_checkpoint: Union[str, Path] = ""     # Pretrained checkpoint path
     load_in_8bit: bool = False                       # (For OpenVLA only) Load with 8-bit quantization
     load_in_4bit: bool = False                       # (For OpenVLA only) Load with 4-bit quantization
-
     center_crop: bool = True                         # Center crop? (if trained w/ random crop image aug)
+    norm_stats: str = None                 # Normalization stats for OpenVLA
 
     #################################################################################################################
     # LIBERO environment-specific parameters
@@ -88,7 +88,7 @@ class GenerateConfig:
 
     seed: int = 7                                    # Random Seed (for reproducibility)
     use_vllm: bool = False
-
+    
     # fmt: on
 
 
