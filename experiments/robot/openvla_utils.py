@@ -64,6 +64,10 @@ def get_vla(cfg):
         with open(dataset_statistics_path, "r") as f:
             norm_stats = json.load(f)
         vla.norm_stats = norm_stats
+    elif os.path.isfile(cfg.norm_stats):
+        with open(cfg.norm_stats, "r") as f:
+            norm_stats = json.load(f)
+        vla.norm_stats = norm_stats
     else:
         print(
             "WARNING: No local dataset_statistics.json file found for current checkpoint.\n"
@@ -74,9 +78,7 @@ def get_vla(cfg):
     
 
 def hf_to_vllm(vla, processor, cfg):
-
     import vllm
-
     # Get imbeddings
     vla.input_embds = vla.language_model.get_input_embeddings()
 
