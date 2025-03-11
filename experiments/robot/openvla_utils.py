@@ -64,7 +64,7 @@ def get_vla(cfg):
         with open(dataset_statistics_path, "r") as f:
             norm_stats = json.load(f)
         vla.norm_stats = norm_stats
-    elif os.path.isfile(cfg.norm_stats):
+    elif cfg.norm_stats and os.path.isfile(cfg.norm_stats):
         with open(cfg.norm_stats, "r") as f:
             norm_stats = json.load(f)
         vla.norm_stats = norm_stats
