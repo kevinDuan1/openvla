@@ -27,7 +27,7 @@ import draccus
 import numpy as np
 import tqdm
 from libero.libero import benchmark
-
+import time
 import wandb
 
 # Append current directory so that interpreter can find experiments.robot
@@ -65,6 +65,7 @@ class GenerateConfig:
     load_in_4bit: bool = False                       # (For OpenVLA only) Load with 4-bit quantization
 
     center_crop: bool = True                         # Center crop? (if trained w/ random crop image aug)
+    norm_stats: str = None                 # Normalization stats for OpenVLA
 
     #################################################################################################################
     # LIBERO environment-specific parameters
@@ -144,7 +145,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
 
     # Get expected image dimensions
     resize_size = get_image_resize_size(cfg)
-
+    inference_times = []
     # Start evaluation
     total_episodes, total_successes = 0, 0
     for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
@@ -210,7 +211,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         ),
                     }
 
-
+                    start_time = time.perf_counter()
                     # Query model to get action
                     action = get_action(
                         cfg,
@@ -219,6 +220,9 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         task_description,
                         processor=processor,
                     )
+                    end_time = time.perf_counter()
+                    inference_time = end_time - start_time  
+                    inference_times.append(inference_time)                 
                     action, generated_ids = action
                     generated_text = processor.batch_decode(generated_ids)[0]
                     replay_reasoning.append(generated_text)
@@ -278,6 +282,20 @@ def eval_libero(cfg: GenerateConfig) -> None:
                 }
             )
 
+    if inference_times:
+        total_inference_time = sum(inference_times)
+        num_steps = len(inference_times)
+        average_inference_time = total_inference_time / num_steps
+        throughput = num_steps / total_inference_time
+        print(f"Average inference time: {average_inference_time:.4f} seconds")
+        print(f"Throughput: {throughput:.2f} steps per second")
+        log_file.write(f"Average inference time: {average_inference_time:.4f} seconds\n")
+        log_file.write(f"Throughput: {throughput:.2f} steps per second\n")
+        if cfg.use_wandb:
+            wandb.log({
+                "average_inference_time": average_inference_time,
+                "throughput": throughput,
+        })
     # Save local log file
     log_file.close()
 
