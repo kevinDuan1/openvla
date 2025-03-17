@@ -177,8 +177,10 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         image = tf.image.convert_image_dtype(image, orig_dtype, saturate=True)
 
         # Convert back to PIL Image
-        image = Image.fromarray(image.numpy())
+        image = Image.fromarray(image.numpy()) 
         image = image.convert("RGB")
+        print(f'image size: {image.size}')
+
 
     # 2. Process original prompt
     if "openvla-v01" in base_vla_name:  # OpenVLA v0.1

@@ -223,16 +223,15 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     generated_text = processor.batch_decode(generated_ids)[0]
                     replay_reasoning.append(generated_text)
                     print(generated_text)
-                    
                       
                     # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
                     action = normalize_gripper_action(action, binarize=True)
-                    print(f"Action: {action}")
+                    
                     # [OpenVLA] The dataloader flips the sign of the gripper action to align with other datasets
                     # (0 = close, 1 = open), so flip it back (-1 = open, +1 = close) before executing the action
                     if cfg.model_family == "openvla":
                         action = invert_gripper_action(action)
-
+                    print(f"Action: {action}")
                     # Execute action in environment
                     obs, reward, done, info = env.step(action.tolist())
                     if done:
