@@ -205,12 +205,13 @@ def finetune(cfg: FinetuneConfig) -> None:
     #     image_transform=processor.image_processor.apply_transform,
     #     prompt_builder_fn=PurePromptBuilder if "v01" not in cfg.vla_path else VicunaV15ChatPromptBuilder,
     # )
-    # ---
+    # ---·
     batch_transform = RLDSBatchTransform(
         action_tokenizer,
         processor.tokenizer,
         image_transform=processor.image_processor.apply_transform,
-        prompt_builder_fn=PurePromptBuilder if "v01" not in cfg.vla_path else VicunaV15ChatPromptBuilder,
+        prompt_builder_fn= VicunaV15ChatPromptBuilder,
+        # prompt_builder_fn=PurePromptBuilder if "v01" not in cfg.vla_path else VicunaV15ChatPromptBuilder,
     )
     
     vla_dataset = RLDSDataset(
@@ -222,7 +223,7 @@ def finetune(cfg: FinetuneConfig) -> None:
         image_aug=cfg.image_aug,
     )
 
-    # [Important] Save Dataset Statistics =>> used to de-normalize actions for inference!
+    # [Important] Save Dataset Statistics =>> used to de-normalize actions for inference!·
     if distributed_state.is_main_process:
         save_dataset_statistics(vla_dataset.dataset_statistics, run_dir)
 

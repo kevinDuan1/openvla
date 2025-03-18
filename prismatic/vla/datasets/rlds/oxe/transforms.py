@@ -840,6 +840,17 @@ def libero_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
     trajectory["observation"]["gripper_state"] = trajectory["observation"]["state"][:, -2:]  # 2D gripper state
     return trajectory
 
+def custom_droid_rlds_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    trajectory["action"] = tf.concat(
+        [
+            trajectory["action"][:, :6],
+            invert_gripper_actions(binarize_gripper_actions(trajectory["action"][:, -1])[:, None]),
+        ],
+        axis=1,
+    )
+    trajectory["observation"]["EEF_state"] = trajectory["observation"]["state"][:, :6]
+    trajectory["observation"]["gripper_state"] = trajectory["observation"]["state"][:, -1:]  # 2D gripper state
+    return trajectory
 
 # === Registry ===
 OXE_STANDARDIZATION_TRANSFORMS = {
@@ -919,4 +930,5 @@ OXE_STANDARDIZATION_TRANSFORMS = {
     "libero_object_no_noops": libero_dataset_transform,
     "libero_goal_no_noops": libero_dataset_transform,
     "libero_10_no_noops": libero_dataset_transform,
+    "custom_droid_rlds_dataset": custom_droid_rlds_dataset_transform,
 }
