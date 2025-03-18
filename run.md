@@ -17,7 +17,7 @@ torchrun --standalone --nnodes 1 --nproc-per-node 2 vla-scripts/finetune.py \
   --adapter_tmp_dir tmp/ \
   --lora_rank 32 \
   --batch_size 2 \
-  --max_steps 50000 \
+  --max_steps 100000 \
   --save_steps 10000 \
   --grad_accumulation_steps 1 \
   --learning_rate 5e-4 \
@@ -49,7 +49,7 @@ python experiments/robot/libero/run_libero_eval_batch.py \
   --model_family openvla \
   --pretrained_checkpoint /home/zhekai/code/embodied-CoT/outputs/ecot-openvla-7b-oxe+libero_object_no_noops+b1+lr-0.0005+lora-r32+dropout-0.0 \
   --task_suite_name libero_object \
-  --center_crop True 
+  --center_crop True \
   --use_vllm True
 
 export CUDA_VISIBLE_DEVICES=1
