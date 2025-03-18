@@ -44,18 +44,16 @@ python experiments/robot/libero/run_libero_eval_batch.py \
 # batched evaluation VLLM
 python experiments/robot/libero/run_libero_eval_batch.py \
   --model_family openvla \
-  --pretrained_checkpoint "leepanic/ecot-libero-object" \
+  --pretrained_checkpoint leepanic/ecot-libero-object \
   --task_suite_name libero_object \
   --center_crop True \
-  --use_vllm True \ 
-  --vllm_path /home/zhekai/.cache/huggingface/hub/models--leepanic--ecot-libero-object/dataset_statistics.json
+  --use_vllm True 
 
-
-
-export CUDA_VISIBLE_DEVICES=1
+# VLLM evaluation 
   python experiments/robot/libero/run_libero_eval.py \
   --model_family openvla \
-  --pretrained_checkpoint openvla/openvla-7b-finetuned-libero-object \
+  --pretrained_checkpoint leepanic/ecot-libero-object \
   --task_suite_name libero_object \
-  --center_crop True
+  --center_crop True \
+  --use_vllm True
 ```
