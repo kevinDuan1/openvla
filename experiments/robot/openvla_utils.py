@@ -265,7 +265,7 @@ class PromptManager(object):
         # Intialize subtask history
         self.subtask_history = dict()
         for t in CotTag:
-            self.subtask_history[t.name] = []
+            self.subtask_history[t.name] = [""]
 
     def update_history(self, generated_text, index=None):
         """ Update subtask history based on 
