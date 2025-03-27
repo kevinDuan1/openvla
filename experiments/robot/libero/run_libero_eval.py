@@ -52,6 +52,7 @@ from experiments.robot.robot_utils import (
     set_seed_everywhere,
 )
 
+from experiments.robot.openvla_utils import hf_to_vllm 
 
 @dataclass
 class GenerateConfig:
