@@ -239,8 +239,9 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     # (0 = close, 1 = open), so flip it back (-1 = open, +1 = close) before executing the action
                     if cfg.model_family == "openvla":
                         action = invert_gripper_action(action)
-                    print(f"Action: {action}")
+
                     print(f"Inference time: {inference_time:.4f} seconds\n")
+                    print(f"Action: {action}")
                     # Execute action in environment
                     obs, reward, done, info = env.step(action.tolist())
                     if done:
