@@ -89,6 +89,7 @@ class GenerateConfig:
     seed: int = 1                                    # Random Seed (for reproducibility)
     use_vllm: bool = False                           # Use VLLM for action generation
     reasoning: bool = False                            # Use reasoning for action generation
+    async_engine: bool = False                           # Use async engine for action generation
     # fmt: on
 
 
@@ -216,20 +217,17 @@ def eval_libero(cfg: GenerateConfig) -> None:
                             (obs["robot0_eef_pos"], quat2axisangle(obs["robot0_eef_quat"]), obs["robot0_gripper_qpos"])
                         ),
                     }
-
-                    start_time = time.perf_counter()
+                    
                     # Query model to get action
-                    action = get_action(
+                    inference_time, action, generated_ids = get_action(
                         cfg,
                         model,
                         observation,
                         task_description,
                         processor=processor,
-                    )
-                    end_time = time.perf_counter()
-                    inference_time = end_time - start_time  
+                        max_new_tokens=1024,
+                    ) 
                     inference_times.append(inference_time)                 
-                    action, generated_ids = action
                     generated_text = processor.batch_decode(generated_ids)[0]
                     replay_reasoning.append(generated_text)
                     print(generated_text)
@@ -242,6 +240,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     if cfg.model_family == "openvla":
                         action = invert_gripper_action(action)
                     print(f"Action: {action}")
+                    print(f"Inference time: {inference_time:.4f} seconds\n")
                     # Execute action in environment
                     obs, reward, done, info = env.step(action.tolist())
                     if done:

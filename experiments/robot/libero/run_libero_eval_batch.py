@@ -250,7 +250,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
 
                 print(f"Inference time: {inference_time:.4f} seconds\n")
                 inference_times.append(inference_time)
-                print(f'Action: {action}')
                 generated_texts = processor.batch_decode(generated_ids)
 
                 # M: Update prompt history

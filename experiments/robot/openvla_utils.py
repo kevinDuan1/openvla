@@ -214,28 +214,23 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
     if hasattr(vla, 'use_vllm') and vla.use_vllm:
         import vllm # only executed once
 
-        if prompts is None: prompts = [prompt]
+        if prompts is None: 
+            prompts = [prompt]
+            sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2])
+        else:
+            sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[29901])
         inputs = [processor.tokenizer(p, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE) for p in prompts]
         pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(DEVICE, dtype=torch.bfloat16)
-        sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2])
-
-        start = torch.cuda.Event(enable_timing=True)
-        end = torch.cuda.Event(enable_timing=True)
-        start.record()
-        # TODO: check vllm inference parameters 
-        # start_time = time.perf_counter()
+        
+        start_time = time.perf_counter()
         outputs = vla.vllm_inference(input_ids=inputs, pixel_values=pixel_values, sampling_params=sampling_params)
-        # infer_time = time.perf_counter() - start_time
-        end.record()
-        torch.cuda.synchronize()
-        infer_time = start.elapsed_time(end) / 1000
+        infer_time = time.perf_counter() - start_time 
         # --------------------------------------------------
         # TODO: this should be put into modeling_prismatic.py
         generated_ids = []
         for i, o in zip(inputs, outputs):
             generated_ids.append(i[0].cpu().numpy().tolist() + list(o.outputs[0].token_ids))
         # generated_ids = np.array(generated_ids)
-
         # Fetch normalized actions
         predicted_action_token_ids = np.array(generated_ids[-1][-(vla.get_action_dim(unnorm_key) + 1) : -1])
         discretized_actions = vla.vocab_size - predicted_action_token_ids
