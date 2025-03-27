@@ -29,6 +29,7 @@ import tqdm
 from libero.libero import benchmark
 import time 
 import wandb
+import torch
 
 # Append current directory so that interpreter can find experiments.robot
 sys.path.append("../..")
@@ -88,7 +89,7 @@ class GenerateConfig:
 
     seed: int = 7                                    # Random Seed (for reproducibility)
     use_vllm: bool = False
-    
+    async_engine: bool = False
     # fmt: on
 
 
@@ -154,6 +155,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
     inference_times = []
     # Start evaluation
     total_episodes, total_successes = 0, 0
+
     for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
         # Get task
         task = task_suite.get_task(task_id)
@@ -197,101 +199,84 @@ def eval_libero(cfg: GenerateConfig) -> None:
             print(f"Starting episode {task_episodes+1}...")
             log_file.write(f"Starting episode {task_episodes+1}...\n")
             while t < max_steps + cfg.num_steps_wait:
-                # try:
-
-                    # IMPORTANT: Do nothing for the first few timesteps because the simulator drops objects
-                    # and we need to wait for them to fall
-                    if t < cfg.num_steps_wait:
-                        obs, reward, done, info = env.step(get_libero_dummy_action(cfg.model_family))
-                        t += 1
-                        continue
-
-                    # Get preprocessed image
-                    img = get_libero_image(obs, resize_size)
-
-                    # Save preprocessed image for replay video
-                    replay_images.append(img)
-
-                    # Prepare observations dict
-                    # Note: OpenVLA does not take proprio state as input
-                    observation = {
-                        "full_image": img,
-                        "state": np.concatenate(
-                            (obs["robot0_eef_pos"], quat2axisangle(obs["robot0_eef_quat"]), obs["robot0_gripper_qpos"])
-                        ),
-                    }
-                    
-                    # M: first step to predict full CoT
-                    # (a way to initialize the history, but can be done in other ways)
-                    if t == cfg.num_steps_wait:
-
-                        # Query model to get action
-                        start_time = time.perf_counter()
-                        action = get_action(
-                            cfg,
-                            model,
-                            observation,
-                            task_description,
-                            processor=processor,
-                        )
-                        end_time = time.perf_counter()
-                        inference_time = end_time - start_time
-                        inference_times.append(inference_time)
-                        action, generated_ids = action
-                        generated_text = processor.batch_decode(generated_ids)[0]
-
-                        # M: Update prompt history
-                        prompt_manager.update_history(generated_text)
-
-                    else:
-                        prompts = prompt_manager.generate_prompts(task_description)
-                        # Query model to get action
-                        start_time = time.perf_counter()
-                        action = get_action(
-                            cfg,
-                            model,
-                            observation,
-                            task_description,
-                            processor=processor,
-                            prompts=prompts, 
-                            max_new_tokens=60,
-                        )
-                        end_time = time.perf_counter()
-                        inference_time = end_time - start_time
-                        inference_times.append(inference_time)
-                        action, generated_ids = action
-                        generated_texts = processor.batch_decode(generated_ids)
-
-                        # M: Update prompt history
-                        for i, generated_text in enumerate(generated_texts[:-1]):
-                            prompt_manager.update_history(generated_text, i)
-                        generated_text = generated_texts[-1]
-
-                    # Save reasoning results
-                    replay_reasoning.append(generated_text)
-                    print(generated_text)
-
-                    # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
-                    action = normalize_gripper_action(action, binarize=True)
-                    print(f"Action: {action}\n")
-
-                    # [OpenVLA] The dataloader flips the sign of the gripper action to align with other datasets
-                    # (0 = close, 1 = open), so flip it back (-1 = open, +1 = close) before executing the action
-                    if cfg.model_family == "openvla":
-                        action = invert_gripper_action(action)
-
-                    # Execute action in environment
-                    obs, reward, done, info = env.step(action.tolist())
-                    if done:
-                        task_successes += 1
-                        total_successes += 1
-                        break
+                # IMPORTANT: Do nothing for the first few timesteps because the simulator drops objects
+                # and we need to wait for them to fall
+                if t < cfg.num_steps_wait:
+                    obs, reward, done, info = env.step(get_libero_dummy_action(cfg.model_family))
                     t += 1
+                    continue
 
-                # except Exception as e:
-                #     print(f"caught exception: {e}")
-                #     log_file.write(f"caught exception: {e}\n")
-                #     break
+                # Get preprocessed image
+                img = get_libero_image(obs, resize_size)
+
+                # Save preprocessed image for replay video
+                replay_images.append(img)
+
+                # Prepare observations dict
+                # Note: OpenVLA does not take proprio state as input
+                observation = {
+                    "full_image": img,
+                    "state": np.concatenate(
+                        (obs["robot0_eef_pos"], quat2axisangle(obs["robot0_eef_quat"]), obs["robot0_gripper_qpos"])
+                    ),
+                }
+                
+                # M: first step to predict full CoT
+                # (a way to initialize the history, but can be done in other ways)
+                if t == cfg.num_steps_wait:
+                    inference_time, action, generated_ids = get_action(
+                        cfg,
+                        model,
+                        observation,
+                        task_description,
+                        processor=processor,
+                    )
+                    generated_text = processor.batch_decode(generated_ids)[0]
+                    # M: Update prompt history
+                    prompt_manager.update_history(generated_text)
+
+                else:
+                    prompts = prompt_manager.generate_prompts(task_description)
+                    # Query model to get action
+                    inference_time, action, generated_ids = get_action(
+                        cfg,
+                        model,
+                        observation,
+                        task_description,
+                        processor=processor,
+                        prompts=prompts, 
+                        max_new_tokens=60,
+                    )
+
+                print(f"Inference time: {inference_time:.4f} seconds\n")
+                inference_times.append(inference_time)
+                print(f'Action: {action}')
+                generated_texts = processor.batch_decode(generated_ids)
+
+                # M: Update prompt history
+                for i, generated_text in enumerate(generated_texts[:-1]):
+                    prompt_manager.update_history(generated_text, i)
+                generated_text = generated_texts[-1]
+
+                # Save reasoning results
+                replay_reasoning.append(generated_text)
+                print(generated_text)
+                # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
+                action = normalize_gripper_action(action, binarize=True)
+                print(f"Action: {action}\n")
+
+                # [OpenVLA] The dataloader flips the sign of the gripper action to align with other datasets
+                # (0 = close, 1 = open), so flip it back (-1 = open, +1 = close) before executing the action
+                if cfg.model_family == "openvla":
+                    action = invert_gripper_action(action)
+
+                # Execute action in environment
+                obs, reward, done, info = env.step(action.tolist())
+                if done:
+                    task_successes += 1
+                    total_successes += 1
+                    break
+                t += 1
 
             task_episodes += 1
             total_episodes += 1
@@ -325,6 +310,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     f"num_episodes/{task_description}": task_episodes,
                 }
             )
+            
     if inference_times:
         total_inference_time = sum(inference_times)
         num_steps = len(inference_times)
