@@ -29,6 +29,7 @@ import tqdm
 from libero.libero import benchmark
 import time
 import wandb
+from experiments.robot.openvla_utils import hf_to_vllm 
 
 # Append current directory so that interpreter can find experiments.robot
 sys.path.append("../..")
@@ -118,6 +119,10 @@ def eval_libero(cfg: GenerateConfig) -> None:
     processor = None
     if cfg.model_family == "openvla":
         processor = get_processor(cfg)
+        if cfg.use_vllm:
+            model = hf_to_vllm(model, processor, cfg)
+            model.use_vllm = True
+        else: model.use_vllm = False
 
     # Initialize local logging
     run_id = f"EVAL-{cfg.task_suite_name}-{cfg.model_family}-{DATE_TIME}"

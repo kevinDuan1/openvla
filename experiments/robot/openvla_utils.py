@@ -95,7 +95,14 @@ def hf_to_vllm(vla, processor, cfg):
     # TODO: check vllm load mode, check settings, memory
     # check if async engine is enabled
     if not cfg.async_engine:
-        vla.language_model = vllm.LLM(vllm_model_path, trust_remote_code=True, gpu_memory_utilization=0.7, preemption_mode='swap', swap_space = 10, enable_chunked_prefill = True, enable_prefix_caching = True, max_num_seqs = 10)
+        vla.language_model = vllm.LLM(vllm_model_path, 
+                                      trust_remote_code=True, 
+                                      gpu_memory_utilization=0.7, 
+                                      preemption_mode='swap', 
+                                      swap_space = 10, 
+                                      enable_chunked_prefill = True, 
+                                      enable_prefix_caching = True, 
+                                      max_num_seqs = 10)
     else:
         vla.language_model  = vllm.AsyncLLMEngine.from_engine_args(
                 vllm.AsyncEngineArgs(
