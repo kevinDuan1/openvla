@@ -289,10 +289,11 @@ def eval_libero(cfg: GenerateConfig) -> None:
                 inference_times.append(inference_time)
 
                 # Save Faithfull Results
-                faith_results.append(np.concatenate([faith_actions, action], dim=0)) # [9,7]
-                faith_scores.append(np.mean((faith_actions - np.expand_dims(action, 0)**2), axis=-1) ) # [8,]
+                combined_actions = np.concatenate([faith_actions, np.expand_dims(action, 0)], axis=0) # [9, 7]
+                faith_results.append(combined_actions) 
+                faith_scores.append(np.sum(np.abs(combined_actions[:8] - combined_actions[8:]), axis=-1)) 
+                print("Faith Score: ", faith_scores[-1]) # [8,]
                 
-
                 # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
                 action = normalize_gripper_action(action, binarize=True)
                 print(f"Action: {action}\n")
@@ -324,11 +325,11 @@ def eval_libero(cfg: GenerateConfig) -> None:
             print(f"Success: {done}")
             print(f"# episodes completed so far: {total_episodes}")
             print(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)")
-            print(f"# faithfulness so far: {np.mean(np.array(faith_scores), axis=-1).tolist()}")
+            print(f"# faithfulness so far: {np.mean(np.array(faith_scores), axis=0).tolist()}")
             log_file.write(f"Success: {done}\n")
             log_file.write(f"# episodes completed so far: {total_episodes}\n")
             log_file.write(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)\n")
-            log_file.write(f"# faithfulness so far: {np.mean(np.array(faith_scores), axis=-1).tolist()}")
+            log_file.write(f"# faithfulness so far: {np.mean(np.array(faith_scores), axis=0).tolist()}")
             log_file.flush()
 
         # Log final results
@@ -359,6 +360,12 @@ def eval_libero(cfg: GenerateConfig) -> None:
                 "average_inference_time": average_inference_time,
                 "throughput": throughput,
         })
+        faith_results = np.array(faith_results)
+        print(faith_results.shape)
+        faith_filepath = local_log_filepath.replace('.txt', '.npy')
+        with open(faith_filepath, "wb") as wf:
+            np.save(wf, faith_results)
+
     # Save local log file
     log_file.close()
 
