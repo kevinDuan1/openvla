@@ -247,19 +247,16 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         prompts=prompts, 
                         max_new_tokens=60,
                     )
-
-                print(f"Inference time: {inference_time:.4f} seconds\n")
-                inference_times.append(inference_time)
-                generated_texts = processor.batch_decode(generated_ids)
-
-                # M: Update prompt history
-                for i, generated_text in enumerate(generated_texts[:-1]):
-                    prompt_manager.update_history(generated_text, i)
-                generated_text = generated_texts[-1]
+                    generated_texts = processor.batch_decode(generated_ids)
+                    for i, generated_text in enumerate(generated_texts[:-1]):
+                        prompt_manager.update_history(generated_text, i)
+                    generated_text = generated_texts[-1]
 
                 # Save reasoning results
                 replay_reasoning.append(generated_text)
                 print(generated_text)
+                print(f"Inference time: {inference_time:.4f} seconds\n")
+                inference_times.append(inference_time)
                 # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
                 action = normalize_gripper_action(action, binarize=True)
                 print(f"Action: {action}\n")

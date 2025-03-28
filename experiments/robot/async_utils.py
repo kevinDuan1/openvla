@@ -36,7 +36,7 @@ async def run_query(query, engine, params):
         final_output = output
     responses = []
     for output in final_output.outputs:
-        responses.append(output.text)
+        responses.append(output.text[0])
     return responses
 
 async def action_request(vla, async_engine, inputs_action, pixel_values, sampling_params):
