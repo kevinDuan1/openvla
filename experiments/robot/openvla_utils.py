@@ -168,7 +168,7 @@ def crop_and_resize(image, crop_scale, batch_size):
     return image
 
 
-def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, center_crop=False, max_new_tokens=None, prompts=None):
+def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, center_crop=False, max_new_tokens=None, prompts=None, return_batch_actions=False):
     """Generates an action with the VLA policy."""
 
     image = Image.fromarray(obs["full_image"])
@@ -231,8 +231,12 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         for i, o in zip(inputs, outputs):
             generated_ids.append(i[0].cpu().numpy().tolist() + list(o.outputs[0].token_ids))
         # generated_ids = np.array(generated_ids)
+
         # Fetch normalized actions
-        predicted_action_token_ids = np.array(generated_ids[-1][-(vla.get_action_dim(unnorm_key) + 1) : -1])
+        if return_batch_actions:
+            predicted_action_token_ids = np.array([generated_ids[i][-(vla.get_action_dim(unnorm_key) + 1) : -1] for i in range(len(generated_ids))])
+        else:
+            predicted_action_token_ids = np.array(generated_ids[-1][-(vla.get_action_dim(unnorm_key) + 1) : -1])
         discretized_actions = vla.vocab_size - predicted_action_token_ids
         discretized_actions = np.clip(discretized_actions - 1, a_min=0, a_max=vla.bin_centers.shape[0] - 1)
         normalized_actions = vla.bin_centers[discretized_actions]
@@ -324,4 +328,16 @@ class PromptManager(object):
                 prompt = prompt + self.subtask_history[t.name]# Use updated history
             except:
                 raise ValueError(f"Subtask {t.name} not found in history, history: {self.subtask_history}")
+        return prompts
+
+    def generate_prompts_faith(self, task_description):
+        """ Generate batch prompts, with history
+        """
+        prompts = []
+        prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_description.lower()}? ASSISTANT: "
+        for i, t in enumerate(CotTag):
+            if i == len(CotTag) - 1: break
+            new_prompt = prompt + "Action: "
+            prompts.append(new_prompt)
+            prompt = prompt + t.value + self.subtask_history[t.name] # Use updated history
         return prompts
