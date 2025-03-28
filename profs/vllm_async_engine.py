@@ -28,6 +28,8 @@ class CotTag(enum.Enum):
     GRIPPER_POSITION = "GRIPPER POSITION:"
     ACTION = "ACTION:"
 
+    
+
 def get_cot_tags_list():
     return [
         CotTag.TASK.value,
@@ -136,6 +138,9 @@ from transformers.utils import TensorType
 prompts_reason = prompts[:-1]
 prompts_action = prompts[-1]
 
+for p in prompts_reason:
+    print(p)
+    print("\n")
 inputs_reason = [processor.tokenizer(p, return_tensors=TensorType.PYTORCH)['input_ids'].to(device) for p in prompts_reason]
 inputs_action = [processor.tokenizer(prompts_action, return_tensors=TensorType.PYTORCH)['input_ids'].to(device)]
 pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(device, dtype=torch.bfloat16)
@@ -162,6 +167,7 @@ async def reasoning_request_task(sampling_params):
     for _ in range(3):
         start = time.perf_counter()
         result = await engine_inference(vla, async_engine, inputs_reason, pixel_values, sampling_params)
+        print('Type of the reason is', type(result[0]))
         print("Reasoning Inference time:", time.perf_counter() - start)
         print("Reasoning result:", result)
         # await asyncio.sleep(0.1)

@@ -3,6 +3,9 @@ from uuid import uuid4
 import vllm
 import torch
 
+reasoning_res = None
+reason_finished = False
+
 async def engine_inference(
     model,
     engine,
@@ -15,7 +18,6 @@ async def engine_inference(
     projected_patch_embeddings = model.projector(patch_features)
     embds = model.input_embds
     input_embeddings = [embds(ids) for ids in input_ids]
-    
     # Build Multimodal Embeddings & Attention Mask =>> Prismatic defaults to inserting after <BOS> token (1:)
     multimodal_embeddings = [torch.cat([inemb[:, :1, :], projected_patch_embeddings, inemb[:, 1:, :]], dim=1).squeeze(0) for inemb in input_embeddings]#[0] 
     prompt = [[32000] * emb.shape[-2] for emb in multimodal_embeddings]
@@ -36,3 +38,14 @@ async def run_query(query, engine, params):
     for output in final_output.outputs:
         responses.append(output.text)
     return responses
+
+async def action_request(vla, async_engine, inputs_action, pixel_values, sampling_params):
+    action_res = await engine_inference(vla, async_engine, inputs_action, pixel_values, sampling_params)
+    return action_res
+
+async def reasoning_request(vla, async_engine, inputs_reasoning, pixel_values, sampling_params):
+    reasoning_res = await engine_inference(vla, async_engine, inputs_reasoning, pixel_values, sampling_params)
+    reason_finished = True
+    
+def get_reason():
+    return reasoning_res
