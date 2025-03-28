@@ -28,8 +28,6 @@ class CotTag(enum.Enum):
     GRIPPER_POSITION = "GRIPPER POSITION:"
     ACTION = "ACTION:"
 
-    
-
 def get_cot_tags_list():
     return [
         CotTag.TASK.value,
@@ -138,9 +136,9 @@ from transformers.utils import TensorType
 prompts_reason = prompts[:-1]
 prompts_action = prompts[-1]
 
-for p in prompts_reason:
-    print(p)
-    print("\n")
+# for p in prompts_reason:
+#     print(p)
+#     print("\n")
 inputs_reason = [processor.tokenizer(p, return_tensors=TensorType.PYTORCH)['input_ids'].to(device) for p in prompts_reason]
 inputs_action = [processor.tokenizer(prompts_action, return_tensors=TensorType.PYTORCH)['input_ids'].to(device)]
 pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(device, dtype=torch.bfloat16)
@@ -153,31 +151,41 @@ def get_outputs(model, engine, inputs, pixel_values, sampling_params):
     print(result)
 
 
+action_result = None
+reasoning_result = None
 # Background task for sending action requests
 async def action_request_task(sampling_params):
-   for _ in range(10):
+    global action_result
+    for _ in range(1):
         start = time.perf_counter()
-        result = await engine_inference(vla, async_engine, inputs_action, pixel_values, sampling_params)
+        action_result = await engine_inference(vla, async_engine, inputs_action, pixel_values, sampling_params)
         print(f"Action Inference time: {time.perf_counter() - start}")
-        print("Action result:", result)
+        # print("Action result:", result)
         # await asyncio.sleep(1)  # Wait 1 second before the next request
 
 # Background task for sending reasoning requests
 async def reasoning_request_task(sampling_params):
-    for _ in range(3):
+    global reasoning_result
+    for _ in range(1):
         start = time.perf_counter()
-        result = await engine_inference(vla, async_engine, inputs_reason, pixel_values, sampling_params)
-
+        reasoning_result = await engine_inference(vla, async_engine, inputs_reason, pixel_values, sampling_params)
         print("Reasoning Inference time:", time.perf_counter() - start)
-        print("Reasoning result:", result)
+        # print("Reasoning result:", result)
         # await asyncio.sleep(0.1)
 
 # Start the background tasks
 async def update_reason_action():
+
     action_task = asyncio.create_task(action_request_task(sampling_params))
     reasoning_task = asyncio.create_task(reasoning_request_task(sampling_params))
-    await asyncio.sleep(10)
-    action_task.cancel()
-    reasoning_task.cancel()
+    action_result = await action_task
+    # Optionally, you can still check on or handle reasoning_task later if needed
+    return action_result
 
-asyncio.run(update_reason_action())
+
+for _ in range(2):
+    s = time.perf_counter()
+    asyncio.run(update_reason_action())
+    print(f'AAAAAAAAA {time.perf_counter() - s}')
+    print(action_result)
+    print(reasoning_result)

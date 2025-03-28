@@ -12,10 +12,15 @@ from PIL import Image
 from transformers import AutoConfig, AutoImageProcessor, AutoModelForVision2Seq, AutoProcessor
 from transformers.utils import TensorType
 import time 
-
 from prismatic.extern.hf.configuration_prismatic import OpenVLAConfig
 from prismatic.extern.hf.modeling_prismatic import OpenVLAForActionPrediction
 from prismatic.extern.hf.processing_prismatic import PrismaticImageProcessor, PrismaticProcessor
+import asyncio
+from experiments.robot.async_utils import (
+    action_request,
+    reasoning_request,
+    get_reason,
+)
 
 # Initialize important constants and pretty-printing mode in NumPy.
 ACTION_DIM = 7
@@ -321,13 +326,11 @@ def get_vla_action_async(vla, processor, base_vla_name, obs, task_label, unnorm_
         pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(DEVICE, dtype=torch.bfloat16)
         
         start_time = time.perf_counter()
-        outputs = vla.vllm_inference(input_ids=inputs, pixel_values=pixel_values, sampling_params=sampling_params)
+        outputs_action = asyncio.run(action_request(vla, vla.language_model, inputs[-1], pixel_values, sampling_params))
         infer_time = time.perf_counter() - start_time 
-        # --------------------------------------------------
-        # TODO: this should be put into modeling_prismatic.py
-        generated_ids = []
-        for i, o in zip(inputs, outputs):
-            generated_ids.append(i[0].cpu().numpy().tolist() + list(o.outputs[0].token_ids))
+        outputs_reason = get_reason()
+        generated_ids = outputs_reason + outputs_action if outputs_reason else outputs_action
+
         # generated_ids = np.array(generated_ids)
         # Fetch normalized actions
         predicted_action_token_ids = np.array(generated_ids[-1][-(vla.get_action_dim(unnorm_key) + 1) : -1])
@@ -346,24 +349,6 @@ def get_vla_action_async(vla, processor, base_vla_name, obs, task_label, unnorm_
         # --------------------------------------------------
         return infer_time, actions, generated_ids
     
-    # 3. - HF inference
-    # Process inputs
-    if prompts: # batch style
-        processor.tokenizer.padding_side = 'left'
-        inputs = processor(prompts, image, padding=True).to(DEVICE, dtype=torch.bfloat16)
-    else: 
-        inputs = processor(prompt, image).to(DEVICE, dtype=torch.bfloat16)
-    # Get action
-    if 'ecot' in base_vla_name: # ECoT
-        start_time = time.perf_counter()
-        action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, use_cache=True, max_new_tokens=max_new_tokens)
-        infer_time = time.perf_counter() - start_time
-        return infer_time, action # action, generated_ids
-    else: # OpenVLA
-        start_time = time.perf_counter()
-        action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)
-        infer_time = time.perf_counter() - start_time
-        return infer_time, action, [[]]
 
 
 # M: batch prediction
@@ -414,7 +399,7 @@ class PromptManager(object):
         prompts = []
         prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_description.lower()}? ASSISTANT: "
         for i, t in enumerate(CotTag):
-            prompt = prompt + t.value + ': '
+            prompt = prompt + t.value 
             prompts.append(prompt)
             if i == len(CotTag) - 1: break
             try:
