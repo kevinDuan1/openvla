@@ -154,8 +154,7 @@ wandb/
 
 tmp/
 logs/
-dataset/
+dataset
 checkpoints/
 modified_libero_rlds/
-dataset
 .vscode

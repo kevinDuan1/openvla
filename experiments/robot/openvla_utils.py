@@ -217,7 +217,7 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
 
     # 3. VLLM inference batched 
     if hasattr(vla, 'use_vllm') and vla.use_vllm:
-        import vllm # only executed once
+        import vllm # only executed once    
         if prompts is None: 
             prompts = [prompt]
             sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2])
@@ -234,7 +234,7 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         generated_ids = []
         for i, o in zip(inputs, outputs):
             generated_ids.append(i[0].cpu().numpy().tolist() + list(o.outputs[0].token_ids))
-        # generated_ids = np.array(generated_ids)
+
         # Fetch normalized actions
         predicted_action_token_ids = np.array(generated_ids[-1][-(vla.get_action_dim(unnorm_key) + 1) : -1])
         discretized_actions = vla.vocab_size - predicted_action_token_ids
@@ -353,15 +353,15 @@ def get_vla_action_async(vla, processor, base_vla_name, obs, task_label, unnorm_
 
 # M: batch prediction
 class CotTag(enum.Enum):
-    TASK = "TASK"
-    PLAN = "PLAN"
-    VISIBLE_OBJECTS = "VISIBLE OBJECTS"
-    SUBTASK_REASONING = "SUBTASK REASONING"
-    SUBTASK = "SUBTASK"
-    MOVE_REASONING = "MOVE REASONING"
-    MOVE = "MOVE"
-    GRIPPER_POSITION = "GRIPPER POSITION"
-    ACTION = "ACTION"
+    TASK = "TASK:"
+    PLAN = "PLAN:"
+    VISIBLE_OBJECTS = "VISIBLE OBJECTS:"
+    SUBTASK_REASONING = "SUBTASK REASONING:"
+    SUBTASK = "SUBTASK:"
+    MOVE_REASONING = "MOVE REASONING:"
+    MOVE = "MOVE:"
+    GRIPPER_POSITION = "GRIPPER POSITION:"
+    ACTION = "ACTION:"
 
 
 class PromptManager(object):
@@ -370,7 +370,7 @@ class PromptManager(object):
         # Intialize subtask history
         self.subtask_history = dict()
         for t in CotTag:
-            self.subtask_history[t.name] = ""
+            self.subtask_history[t.name] = [""]
 
     def update_history(self, generated_text, index=None):
         """ Update subtask history based on 
@@ -391,8 +391,9 @@ class PromptManager(object):
             end_idx = generated_text.find(cottag_list[i+1].value)
             if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
                 subtask_text =  generated_text[start_idx+len(cottag_list[i].value):end_idx]
-                self.subtask_history[cottag_list[i].name] = subtask_text
-    
+                self.subtask_history[cottag_list[i].name].append(subtask_text)
+
+
     def generate_prompts(self, task_description):
         """ Generate batch prompts, with history
         """
@@ -403,7 +404,7 @@ class PromptManager(object):
             prompts.append(prompt)
             if i == len(CotTag) - 1: break
             try:
-                prompt = prompt + self.subtask_history[t.name]# Use updated history
+                prompt = prompt + self.subtask_history[t.name][-1] # Use updated history
             except:
                 raise ValueError(f"Subtask {t.name} not found in history, history: {self.subtask_history}")
         return prompts
