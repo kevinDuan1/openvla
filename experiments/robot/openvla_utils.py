@@ -317,7 +317,7 @@ class PromptManager(object):
         prompts = []
         prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_description.lower()}? ASSISTANT: "
         for i, t in enumerate(CotTag):
-            prompt = prompt + t.value + ' '
+            prompt = prompt + t.value 
             prompts.append(prompt)
             if i == len(CotTag) - 1: break
             try:
