@@ -156,6 +156,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
     inference_times = []
     # Start evaluation
     total_episodes, total_successes = 0, 0
+    faith_results, faith_scores = [], []
 
     for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
         # Get task
@@ -169,7 +170,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
 
         # Start episodes
         task_episodes, task_successes = 0, 0
-        faith_results, faith_scores = [], []
         for episode_idx in tqdm.tqdm(range(cfg.num_trials_per_task)):
             print(f"\nTask: {task_description}")
             log_file.write(f"\nTask: {task_description}\n")
@@ -262,7 +262,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         prompts=prompts, 
                         max_new_tokens=60,
                     )
-                    generated_texts = processor.batch_decode(generated_ids)
 
                     # M: test faithfulness, for batch-style, first test faithfullness, then update history!
                     faith_prompts = prompt_manager.generate_prompts_faith(task_description)
@@ -278,14 +277,15 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     )
 
                     # M: Update prompt history
+                    generated_texts = processor.batch_decode(generated_ids)
                     for i, generated_text in enumerate(generated_texts[:-1]):
-                        prompt_manager.update_history(generated_text, i)
+                        prompt_manager.update_history(generated_text+" ", i)
                     generated_text = generated_texts[-1]
 
                 # Save reasoning results
                 replay_reasoning.append(generated_text)
-                print(generated_text)
-                print(f"Inference time: {inference_time:.4f} seconds\n")
+                print(f"\nStep: {t}\n", generated_text)
+                print(f"Inference time: {inference_time:.4f} seconds")
                 inference_times.append(inference_time)
 
                 # Save Faithfull Results
@@ -329,7 +329,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
             log_file.write(f"Success: {done}\n")
             log_file.write(f"# episodes completed so far: {total_episodes}\n")
             log_file.write(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)\n")
-            log_file.write(f"# faithfulness so far: {np.mean(np.array(faith_scores), axis=0).tolist()}")
+            log_file.write(f"# faithfulness so far: {np.mean(np.array(faith_scores), axis=0).tolist()}\n")
             log_file.flush()
 
         # Log final results
@@ -361,7 +361,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
                 "throughput": throughput,
         })
         faith_results = np.array(faith_results)
-        print(faith_results.shape)
         faith_filepath = local_log_filepath.replace('.txt', '.npy')
         with open(faith_filepath, "wb") as wf:
             np.save(wf, faith_results)
