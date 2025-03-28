@@ -213,7 +213,6 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
     # 3. VLLM inference batched 
     if hasattr(vla, 'use_vllm') and vla.use_vllm:
         import vllm # only executed once
-
         if prompts is None: 
             prompts = [prompt]
             sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2])
@@ -247,8 +246,106 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         )    
         # --------------------------------------------------
         return infer_time, actions, generated_ids
+    
+    # 3. - HF inference
+    # Process inputs
+    if prompts: # batch style
+        processor.tokenizer.padding_side = 'left'
+        inputs = processor(prompts, image, padding=True).to(DEVICE, dtype=torch.bfloat16)
+    else: 
+        inputs = processor(prompt, image).to(DEVICE, dtype=torch.bfloat16)
+    # Get action
+    if 'ecot' in base_vla_name: # ECoT
+        start_time = time.perf_counter()
+        action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, use_cache=True, max_new_tokens=max_new_tokens)
+        infer_time = time.perf_counter() - start_time
+        return infer_time, action # action, generated_ids
+    else: # OpenVLA
+        start_time = time.perf_counter()
+        action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)
+        infer_time = time.perf_counter() - start_time
+        return infer_time, action, [[]]
 
 
+def get_vla_action_async(vla, processor, base_vla_name, obs, task_label, unnorm_key, center_crop=False, max_new_tokens=None, prompts=None):
+    """Generates an action with the VLA policy."""
+
+    image = Image.fromarray(obs["full_image"])
+    image = image.convert("RGB")
+    infer_time = 0
+    # (If trained with image augmentations) Center crop image and then resize back up to original size.
+    # IMPORTANT: Let's say crop scale == 0.9. To get the new height and width (post-crop), multiply
+    #            the original height and width by sqrt(0.9) -- not 0.9!
+    if center_crop:
+        batch_size = 1
+        crop_scale = 0.9
+
+        # Convert to TF Tensor and record original data type (should be tf.uint8)
+        image = tf.convert_to_tensor(np.array(image))
+        orig_dtype = image.dtype
+
+        # Convert to data type tf.float32 and values between [0,1]
+        image = tf.image.convert_image_dtype(image, tf.float32)
+
+        # Crop and then resize back to original size
+        image = crop_and_resize(image, crop_scale, batch_size)
+
+        # Convert back to original data type
+        image = tf.clip_by_value(image, 0, 1)
+        image = tf.image.convert_image_dtype(image, orig_dtype, saturate=True)
+
+        # Convert back to PIL Image
+        image = Image.fromarray(image.numpy()) 
+        image = image.convert("RGB")
+        # print(f'image size: {image.size}')
+
+    # 2. Process original prompt
+    if "openvla-v01" in base_vla_name:  # OpenVLA v0.1
+        prompt = (
+            f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_label.lower()}? ASSISTANT:"
+        )
+    elif "ecot" in base_vla_name: # ECoT
+        prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_label.lower()}? ASSISTANT: TASK:"
+    else:  # OpenVLA 
+        prompt = f"In: What action should the robot take to {task_label.lower()}?\nOut:"
+
+    # 3. VLLM inference batched 
+    if hasattr(vla, 'use_vllm') and vla.use_vllm:
+        import vllm # only executed once
+        if prompts is None: 
+            prompts = [prompt]
+            sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2])
+        else:
+            sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[29901])
+        inputs = [processor.tokenizer(p, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE) for p in prompts]
+        pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(DEVICE, dtype=torch.bfloat16)
+        
+        start_time = time.perf_counter()
+        outputs = vla.vllm_inference(input_ids=inputs, pixel_values=pixel_values, sampling_params=sampling_params)
+        infer_time = time.perf_counter() - start_time 
+        # --------------------------------------------------
+        # TODO: this should be put into modeling_prismatic.py
+        generated_ids = []
+        for i, o in zip(inputs, outputs):
+            generated_ids.append(i[0].cpu().numpy().tolist() + list(o.outputs[0].token_ids))
+        # generated_ids = np.array(generated_ids)
+        # Fetch normalized actions
+        predicted_action_token_ids = np.array(generated_ids[-1][-(vla.get_action_dim(unnorm_key) + 1) : -1])
+        discretized_actions = vla.vocab_size - predicted_action_token_ids
+        discretized_actions = np.clip(discretized_actions - 1, a_min=0, a_max=vla.bin_centers.shape[0] - 1)
+        normalized_actions = vla.bin_centers[discretized_actions]
+        # Unnormalize actions
+        action_norm_stats = vla.get_action_stats(unnorm_key)
+        mask = action_norm_stats.get("mask", np.ones_like(action_norm_stats["q01"], dtype=bool))
+        action_high, action_low = np.array(action_norm_stats["q99"]), np.array(action_norm_stats["q01"])
+        actions = np.where(
+            mask,
+            0.5 * (normalized_actions + 1) * (action_high - action_low) + action_low,
+            normalized_actions,
+        )    
+        # --------------------------------------------------
+        return infer_time, actions, generated_ids
+    
     # 3. - HF inference
     # Process inputs
     if prompts: # batch style

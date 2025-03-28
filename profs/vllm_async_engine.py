@@ -167,7 +167,7 @@ async def reasoning_request_task(sampling_params):
     for _ in range(3):
         start = time.perf_counter()
         result = await engine_inference(vla, async_engine, inputs_reason, pixel_values, sampling_params)
-        print('Type of the reason is', type(result[0]))
+
         print("Reasoning Inference time:", time.perf_counter() - start)
         print("Reasoning result:", result)
         # await asyncio.sleep(0.1)

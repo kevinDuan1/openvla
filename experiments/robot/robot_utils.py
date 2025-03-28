@@ -10,6 +10,7 @@ import torch
 from experiments.robot.openvla_utils import (
     get_vla,
     get_vla_action,
+    get_vla_action_async,
 )
 
 # Initialize important constants and pretty-printing mode in NumPy.
@@ -62,10 +63,16 @@ def get_image_resize_size(cfg):
 def get_action(cfg, model, obs, task_label, processor=None, max_new_tokens=1024, prompts=None):
     """Queries the model to get an action."""
     if cfg.model_family == "openvla":
-        t, action, reason = get_vla_action(
-            model, processor, cfg.pretrained_checkpoint, obs, task_label, cfg.unnorm_key, center_crop=cfg.center_crop, max_new_tokens=max_new_tokens,
-            prompts=prompts,
-        )
+        if not cfg.async_engine:
+            t, action, reason = get_vla_action(
+                model, processor, cfg.pretrained_checkpoint, obs, task_label, cfg.unnorm_key, center_crop=cfg.center_crop, max_new_tokens=max_new_tokens,
+                prompts=prompts,
+            )
+        else:
+            t, action, reason = get_vla_action_async(
+                model, processor, cfg.pretrained_checkpoint, obs, task_label, cfg.unnorm_key, center_crop=cfg.center_crop, max_new_tokens=max_new_tokens,
+                prompts=prompts,
+            )
     else:
         raise ValueError("Unexpected `model_family` found in config.")
 
