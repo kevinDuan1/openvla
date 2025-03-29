@@ -175,7 +175,6 @@ async def reasoning_request_task(sampling_params):
 
 # Start the background tasks
 async def update_reason_action():
-
     action_task = asyncio.create_task(action_request_task(sampling_params))
     reasoning_task = asyncio.create_task(reasoning_request_task(sampling_params))
     action_result = await action_task
