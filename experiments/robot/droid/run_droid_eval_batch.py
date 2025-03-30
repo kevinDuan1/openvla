@@ -116,7 +116,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
 
     # Initialize local logging
 
-    run_id = cfg.unnorm_key
+    run_id = cfg.unnorm_key + '_' + DATE_TIME
     os.makedirs(cfg.local_log_dir, exist_ok=True)
     local_log_filepath = os.path.join(cfg.local_log_dir, run_id + ".txt")
     log_file = open(local_log_filepath, "w")
