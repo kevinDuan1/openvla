@@ -49,7 +49,6 @@ async def run_query(query, engine, params):
     return responses
 
 async def action_request(vla, async_engine, inputs_action, pixel_values, sampling_params):
-    global action_res
     action_res = await engine_inference(vla, async_engine, inputs_action, pixel_values, sampling_params)
     return action_res
 

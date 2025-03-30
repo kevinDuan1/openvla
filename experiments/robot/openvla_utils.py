@@ -327,12 +327,11 @@ def get_vla_action_async(vla, processor, base_vla_name, obs, task_label, unnorm_
         pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(DEVICE, dtype=torch.bfloat16)
         
         start_time = time.perf_counter()
-        outputs_action = asyncio.run_coroutine_threadsafe(action_request(vla, vla.language_model, inputs[-1], pixel_values, sampling_params), background_loop)
+        action_task = asyncio.run_coroutine_threadsafe(action_request(vla, vla.language_model, inputs[-1], pixel_values, sampling_params), background_loop)
+        while not action_task.done():
+            time.sleep(0.1)
+        generated_ids = action_task.result()
         infer_time = time.perf_counter() - start_time 
-        outputs_reason = get_reason()
-        generated_ids = outputs_reason + outputs_action if outputs_reason else outputs_action
-
-        # generated_ids = np.array(generated_ids)
         # Fetch normalized actions
         predicted_action_token_ids = np.array(generated_ids[-1][-(vla.get_action_dim(unnorm_key) + 1) : -1])
         discretized_actions = vla.vocab_size - predicted_action_token_ids
@@ -350,8 +349,6 @@ def get_vla_action_async(vla, processor, base_vla_name, obs, task_label, unnorm_
         # --------------------------------------------------
         return infer_time, actions, generated_ids
     
-
-
 # M: batch prediction
 class CotTag(enum.Enum):
     TASK = "TASK:"
