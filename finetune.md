@@ -56,4 +56,9 @@ python experiments/robot/libero/run_libero_eval_batch.py \
   --task_suite_name libero_object \
   --center_crop True \
   --use_vllm True
+
+
+ python experiments/robot/droid/run_droid_eval.py --pretrained_checkpoint /media/monkgogi/KINGSTON\ 2T/models/openvla-7b+custom_droid_rlds_dataset+b2+lr-0.0005+lora-r32+dropout-0.0--image_aug
+
+  python experiments/robot/droid/run_droid_eval.py --pretrained_checkpoint logs/openvla-7b+custom_droid_rlds_dataset+b2+lr-0.0005+lora-r32+dropout-0.0--image_aug
 ```

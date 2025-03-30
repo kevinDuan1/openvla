@@ -15,11 +15,13 @@ from PIL import Image, ImageDraw, ImageFont
 import textwrap
 import numpy as np
 import imageio
+import time
 sensor_manager = SensorManager()
 
 
 def get_droid_env():
-    env = RobotEnv(action_space="cartesian_position", gripper_action_space="position")
+    env = RobotEnv(action_space="cartesian_position", gripper_action_space="position", control_hz=5)
+    time.sleep(4)
     return env
 
 
@@ -55,7 +57,7 @@ def get_droid_observation(env):
     robot_obs = env.get_observation()
     
     # Collect sensor data.
-    thermal_raw, thermal_processed, color_img, depth_img, zed_image = sensor_manager.get_sensor_data()
+    _, _, color_img, _, _ = sensor_manager.get_sensor_data()
     
     # Merge sensor data with robot state.
     # invert image upside down
@@ -63,10 +65,7 @@ def get_droid_observation(env):
     # color_img = get_droid_image({"full_image": color_img}, (256, 256))
     observation = dict(robot_obs)
     observation.update({
-        "full_image": color_img,
-        "thermal_processed": thermal_processed,
-        "depth_image": depth_img,
-        "zed_image": zed_image,
+        "full_image": color_img
     })
 
     return observation

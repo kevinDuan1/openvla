@@ -1,22 +1,3 @@
-"""
-run_libero_eval.py
-
-Runs a model in a LIBERO simulation environment.
-
-Usage:
-    # OpenVLA:
-    # IMPORTANT: Set `center_crop=True` if model is fine-tuned with augmentations
-    python experiments/robot/libero/run_libero_eval.py \
-        --model_family openvla \
-        --pretrained_checkpoint <CHECKPOINT_PATH> \
-        --task_suite_name [ libero_spatial | libero_object | libero_goal | libero_10 | libero_90 ] \
-        --center_crop [ True | False ] \
-        --run_id_note <OPTIONAL TAG TO INSERT INTO RUN ID FOR LOGGING> \
-        --use_wandb [ True | False ] \
-        --wandb_project <PROJECT> \
-        --wandb_entity <ENTITY>
-"""
-
 import os
 import sys
 from dataclasses import dataclass
@@ -37,16 +18,11 @@ from experiments.robot.droid.droid_utils import (
     save_rollout_video,
     save_rollot_reasoning,
 )
-
-
 from experiments.robot.openvla_utils import get_processor
 from experiments.robot.robot_utils import (
     DATE_TIME,
     get_action,
-    get_image_resize_size,
     get_model,
-    invert_gripper_action,
-    normalize_gripper_action,
     set_seed_everywhere,
 )
 
@@ -54,23 +30,23 @@ from experiments.robot.robot_utils import (
 @dataclass
 class GenerateConfig:
     # fmt: off
-
     #################################################################################################################
     # Model-specific parameters
     #################################################################################################################
     model_family: str = "openvla"                    # Model family
-    pretrained_checkpoint: Union[str, Path] = ""     # Pretrained checkpoint path
+    pretrained_checkpoint: Union[str, Path] = "logs/openvla-7b+custom_droid_rlds_dataset+b2+lr-0.0005+lora-r32+dropout-0.0--image_aug"     # Pretrained checkpoint path
     load_in_8bit: bool = False                       # (For OpenVLA only) Load with 8-bit quantization
     load_in_4bit: bool = False                       # (For OpenVLA only) Load with 4-bit quantization
 
-    center_crop: bool = True                         # Center crop? (if trained w/ random crop image aug)
+    center_crop: bool = False                         # Center crop? (if trained w/ random crop image aug)
     unnorm_key: str = "custom_droid_rlds_dataset"                       # Key for action un-normalization (for OpenVLA only)
     #################################################################################################################
     # Droid environment-specific parameters
     #################################################################################################################
-    max_steps: int = 90                            # Maximum number of steps to run
+    max_steps: int = 120                            # Maximum number of steps to run
     instruction: str = "place banana on the plate"         # Instruction for the task
     num_steps_wait: int = 4  
+    ema: float = 1                # Exponential moving average for action smoothing
     #################################################################################################################
     # Utils
     #################################################################################################################
@@ -141,7 +117,8 @@ def eval_libero(cfg: GenerateConfig) -> None:
     replay_images = []
     replay_reasoning = []
     t = 0
-    total_episodes = 0
+    total_episodes = 1
+    smooth_action = None
 
     while t < cfg.max_steps + cfg.num_steps_wait:
         # IMPORTANT: Do nothing for the first few timesteps because the simulator drops objects
@@ -150,14 +127,10 @@ def eval_libero(cfg: GenerateConfig) -> None:
             # obs, reward, done, info = env.step(get_libero_dummy_action(cfg.model_family))
             t += 1
             continue
-        
+        start_time = time.time()
         obs = get_droid_observation(env)
-        # Get preprocessed image
         img = get_droid_image(obs, resize_size)
-        # from matplotlib import pyplot as plt
-        # plt.imshow(img)
-        # plt.show()
-        
+    
         replay_images.append(img)
         obs = {"full_image": img}
         # Query model to get action
@@ -177,26 +150,28 @@ def eval_libero(cfg: GenerateConfig) -> None:
         # (0 = close, 1 = open), so flip it back (-1 = open, +1 = close) before executing the action
         if cfg.model_family == "openvla":
             action[-1] = 1 - action[-1]
+
+        # [OpenVLA] Apply exponential moving average to action
+        smooth_action  = action if smooth_action is None else cfg.ema * action + (1 - cfg.ema) * smooth_action
+        print(f"Step {t} Action: {smooth_action}")
         
-        print(f"Step {t} Action: {action}")
+        # Sleep to maintain control Hz
+        sleep_left = 1 / env.control_hz - (time.time() - start_time) 
+        if sleep_left > 0: time.sleep(sleep_left)
+        print(f'sleep time: {sleep_left}')
         # Execute action in environment
-        env.step(action)
+        env.step(smooth_action)
         t += 1
-        # wait 
-        # time.sleep(0.1)
 
-
-        # Save a replay video of the episode
+    # Save a replay video of the episode
     save_rollout_video(
         replay_images, total_episodes, success=True, task_description=cfg.instruction, log_file=log_file
     )
     save_rollot_reasoning(
         replay_reasoning, replay_images, total_episodes, success=True, task_description=cfg.instruction, log_file=log_file
     )
-
     # Save local log file
     log_file.close()
-
 
 if __name__ == "__main__":
     eval_libero()
