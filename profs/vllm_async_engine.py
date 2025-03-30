@@ -154,7 +154,7 @@ def get_outputs(model, engine, inputs, pixel_values, sampling_params):
 action_result = None
 reasoning_result = None
 # Background task for sending action requests
-async def action_request_task(sampling_params):
+async def action_request_task():
     global action_result
     for _ in range(1):
         start = time.perf_counter()
@@ -164,7 +164,7 @@ async def action_request_task(sampling_params):
         # await asyncio.sleep(1)  # Wait 1 second before the next request
 
 # Background task for sending reasoning requests
-async def reasoning_request_task(sampling_params):
+async def reasoning_request_task():
     global reasoning_result
     for _ in range(1):
         start = time.perf_counter()
@@ -175,16 +175,31 @@ async def reasoning_request_task(sampling_params):
 
 # Start the background tasks
 async def update_reason_action():
-    action_task = asyncio.create_task(action_request_task(sampling_params))
-    reasoning_task = asyncio.create_task(reasoning_request_task(sampling_params))
-    action_result = await action_task
-    # Optionally, you can still check on or handle reasoning_task later if needed
+    # Start the reasoning task in the background; we don’t await its completion here.
+    asyncio.create_task(reasoning_request_task())
+    # Immediately wait for and return the action result.
+    action_result = await action_request_task()
     return action_result
 
+# Function to run an event loop forever in a separate thread.
+def start_background_loop(loop):
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
 
-for _ in range(2):
-    s = time.perf_counter()
-    asyncio.run(update_reason_action())
-    print(f'AAAAAAAAA {time.perf_counter() - s}')
-    print(action_result)
-    print(reasoning_result)
+import threading
+# Create and start a background event loop in its own thread.
+background_loop = asyncio.new_event_loop()
+thread = threading.Thread(target=start_background_loop, args=(background_loop,), daemon=True)
+thread.start()
+
+asyncio.run_coroutine_threadsafe(reasoning_request_task(), background_loop)
+action_future = asyncio.run_coroutine_threadsafe(action_request_task(), background_loop)
+
+
+while not action_future.done():
+    # Wait for the action task to complete
+    time.sleep(0.1)
+
+time.sleep(2)
+print("Action result:", action_result)
+print("Reasoning result:", reasoning_result)
