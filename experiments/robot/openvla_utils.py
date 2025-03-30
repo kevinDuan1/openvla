@@ -94,7 +94,7 @@ def hf_to_vllm(vla, processor, cfg):
         del vla.language_model
     # TODO: check vllm load mode, check settings, memory
     # check if async engine is enabled
-    if not cfg.async_engine:
+    if not hasattr(cfg, 'async_engine') or not cfg.async_engine:
         vla.language_model = vllm.LLM(vllm_model_path, 
                                       trust_remote_code=True, 
                                       gpu_memory_utilization=0.7, 
@@ -102,11 +102,11 @@ def hf_to_vllm(vla, processor, cfg):
                                       swap_space = 10, 
                                       enable_chunked_prefill = True, 
                                       enable_prefix_caching = True, 
-                                      max_num_seqs = 10)
+                                      )
     else:
         vla.language_model  = vllm.AsyncLLMEngine.from_engine_args(
                 vllm.AsyncEngineArgs(
-                    model="logs/llama-bridge",
+                    model= vllm_model_path,
                     gpu_memory_utilization=0.64,
                     preemption_mode="swap",
                     swap_space=10,
@@ -262,7 +262,7 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         start_time = time.perf_counter()
         action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, use_cache=True, max_new_tokens=max_new_tokens)
         infer_time = time.perf_counter() - start_time
-        return infer_time, action # action, generated_ids
+        return infer_time, action, [[]] # action, generated_ids
     else: # OpenVLA
         start_time = time.perf_counter()
         action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)

@@ -80,7 +80,7 @@ class GenerateConfig:
 
     seed: int = 1                                    # Random Seed (for reproducibility)
     use_vllm: bool = False                           # Use VLLM for action generation
-    reasoning: bool = False                            # Use reasoning for action generation
+    reasoning: bool = True                            # Use reasoning for action generation
     # fmt: on
 
 
