@@ -53,7 +53,8 @@ from experiments.robot.robot_utils import (
 )
 
 # M: this prompt manager is specifically designed for ECoT
-from experiments.robot.openvla_utils import hf_to_vllm, PromptManager
+from experiments.robot.openvla_utils import PromptManager
+from experiments.robot.openvla_utils import hf_to_vllm 
 
 @dataclass
 class GenerateConfig:
@@ -89,6 +90,7 @@ class GenerateConfig:
     seed: int = 7                                    # Random Seed (for reproducibility)
     use_vllm: bool = False
     async_engine: bool = False
+    use_batch: bool = True
     # fmt: on
 
 
@@ -154,6 +156,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
     inference_times = []
     # Start evaluation
     total_episodes, total_successes = 0, 0
+    faith_results, faith_scores = [], []
 
     for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
         # Get task
@@ -222,7 +225,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
                 
                 # M: first step to predict full CoT
                 # (a way to initialize the history, but can be done in other ways)
-                if t == cfg.num_steps_wait:
+                if t == cfg.num_steps_wait or not cfg.use_batch:
                     inference_time, action, generated_ids = get_action(
                         cfg,
                         model,
@@ -230,10 +233,22 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         task_description,
                         processor=processor,
                     )
-
-                    # M: Update prompt history
                     generated_text = processor.batch_decode(generated_ids)[0]
+                    # M: Update prompt history
                     prompt_manager.update_history(generated_text)
+
+                    # M: test faithfulness, for single-style, first intialize history, then test faithfullness
+                    faith_prompts = prompt_manager.generate_prompts_faith(task_description)
+                    _, faith_actions, _ = get_action(
+                        cfg,
+                        model,
+                        observation,
+                        task_description,
+                        processor=processor,
+                        prompts=faith_prompts, 
+                        max_new_tokens=8,
+                        return_batch_actions=True,
+                    )
 
                 else:
                     prompts = prompt_manager.generate_prompts(task_description)
@@ -247,10 +262,24 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         prompts=prompts, 
                         max_new_tokens=60,
                     )
+
+                    # M: test faithfulness, for batch-style, first test faithfullness, then update history!
+                    faith_prompts = prompt_manager.generate_prompts_faith(task_description)
+                    _, faith_actions, _ = get_action(
+                        cfg,
+                        model,
+                        observation,
+                        task_description,
+                        processor=processor,
+                        prompts=faith_prompts, 
+                        max_new_tokens=8,
+                        return_batch_actions=True,
+                    )
+
+                    # M: Update prompt history
                     generated_texts = processor.batch_decode(generated_ids)
                     for i, generated_text in enumerate(generated_texts[:-1]):
-                        # print("\033[32m" + f"Generated texts: {generated_text}" + "\033[0m")
-                        prompt_manager.update_history(generated_text+" ", i) # since text ends with :
+                        prompt_manager.update_history(generated_text+" ", i)
                     generated_text = generated_texts[-1]
 
                 # Save reasoning results
@@ -258,6 +287,13 @@ def eval_libero(cfg: GenerateConfig) -> None:
                 print(f"\nStep: {t}\n", generated_text)
                 print(f"Inference time: {inference_time:.4f} seconds")
                 inference_times.append(inference_time)
+
+                # Save Faithfull Results
+                combined_actions = np.concatenate([faith_actions, np.expand_dims(action, 0)], axis=0) # [9, 7]
+                faith_results.append(combined_actions) 
+                faith_scores.append(np.sum(np.abs(combined_actions[:8] - combined_actions[8:]), axis=-1)) 
+                print("Faith Score: ", faith_scores[-1]) # [8,]
+                
                 # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
                 action = normalize_gripper_action(action, binarize=True)
                 print(f"Action: {action}\n")
@@ -289,9 +325,11 @@ def eval_libero(cfg: GenerateConfig) -> None:
             print(f"Success: {done}")
             print(f"# episodes completed so far: {total_episodes}")
             print(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)")
+            print(f"# faithfulness so far: {np.mean(np.array(faith_scores), axis=0).tolist()}")
             log_file.write(f"Success: {done}\n")
             log_file.write(f"# episodes completed so far: {total_episodes}\n")
             log_file.write(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)\n")
+            log_file.write(f"# faithfulness so far: {np.mean(np.array(faith_scores), axis=0).tolist()}\n")
             log_file.flush()
 
         # Log final results
@@ -322,6 +360,11 @@ def eval_libero(cfg: GenerateConfig) -> None:
                 "average_inference_time": average_inference_time,
                 "throughput": throughput,
         })
+        faith_results = np.array(faith_results)
+        faith_filepath = local_log_filepath.replace('.txt', '.npy')
+        with open(faith_filepath, "wb") as wf:
+            np.save(wf, faith_results)
+
     # Save local log file
     log_file.close()
 
