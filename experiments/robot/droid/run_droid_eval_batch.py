@@ -2,7 +2,6 @@
 run_libero_eval.py
 
 Runs a model in a LIBERO simulation environment.
-
 Usage:
     # OpenVLA:
     # IMPORTANT: Set `center_crop=True` if model is fine-tuned with augmentations
@@ -38,8 +37,7 @@ from experiments.robot.droid.droid_utils import (
     save_rollot_reasoning,
 )
 
-
-from experiments.robot.openvla_utils import get_processor, hf_to_vllm
+from experiments.robot.openvla_utils import get_processor, hf_to_vllm, PromptManager
 from experiments.robot.robot_utils import (
     DATE_TIME,
     get_action,
@@ -49,7 +47,6 @@ from experiments.robot.robot_utils import (
     normalize_gripper_action,
     set_seed_everywhere,
 )
-
 
 @dataclass
 class GenerateConfig:
@@ -133,9 +130,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
             name=run_id,
         )
 
-    # Initialize LIBERO task suite
-
-
     # Get expected image dimensions
     # resize_size = get_image_resize_size(cfg)
     resize_size = (224, 224)
@@ -147,6 +141,8 @@ def eval_libero(cfg: GenerateConfig) -> None:
     inference_times = []
     t = 0
     total_episodes = 0
+    # M: batch preprations
+    prompt_manager = PromptManager()
 
     while t < cfg.max_steps + cfg.num_steps_wait:
         # IMPORTANT: Do nothing for the first few timesteps because the simulator drops objects
@@ -159,24 +155,44 @@ def eval_libero(cfg: GenerateConfig) -> None:
         obs = get_droid_observation(env)
         # Get preprocessed image
         img = get_droid_image(obs, resize_size)
-        # from matplotlib import pyplot as plt
-        # plt.imshow(img)
-        # plt.show()
         
         replay_images.append(img)
         obs = {"full_image": img}
         # Query model to get action
-        inference_time, action, generated_ids = get_action(
-            cfg,
-            model,
-            obs,
-            cfg.instruction,
-            processor=processor,
-        )
         
-        generated_text = processor.batch_decode(generated_ids)[0]
+        if t == cfg.num_steps_wait:
+            inference_time, action, generated_ids = get_action(
+                cfg,
+                model,
+                obs,
+                cfg.instruction,
+                processor=processor,
+            )
+
+            # M: Update prompt history
+            generated_text = processor.batch_decode(generated_ids)[0]
+            prompt_manager.update_history(generated_text)
+        else:
+            prompts = prompt_manager.generate_prompts(cfg.instruction)
+            # Query model to get action
+            inference_time, action, generated_ids = get_action(
+                cfg,
+                model,
+                obs,
+                cfg.instruction,
+                processor=processor,
+                prompts=prompts, 
+                max_new_tokens=60,
+            )
+            generated_texts = processor.batch_decode(generated_ids)
+            for i, generated_text in enumerate(generated_texts[:-1]):
+                # print("\033[32m" + f"Generated texts: {generated_text}" + "\033[0m")
+                prompt_manager.update_history(generated_text+" ", i) # since text ends with :
+            generated_text = generated_texts[-1]
+
         replay_reasoning.append(generated_text)
-        print(generated_text)
+        print(f"\nStep: {t}\n", generated_text)
+        print(f"Inference time: {inference_time:.4f} seconds")
         inference_times.append(inference_time)
         # [OpenVLA] The dataloader flips the sign of the gripper action to align with other datasets
         # (0 = close, 1 = open), so flip it back (-1 = open, +1 = close) before executing the action
@@ -187,7 +203,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
         # Execute action in environment
         env.step(action)
         t += 1
-
 
     # Save a replay video of the episode
     save_rollout_video(
@@ -215,7 +230,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
             
     # Save local log file
     log_file.close()
-
 
 if __name__ == "__main__":
     eval_libero()

@@ -53,8 +53,7 @@ from experiments.robot.robot_utils import (
 )
 
 # M: this prompt manager is specifically designed for ECoT
-from experiments.robot.openvla_utils import PromptManager
-from experiments.robot.openvla_utils import hf_to_vllm 
+from experiments.robot.openvla_utils import hf_to_vllm, PromptManager
 
 @dataclass
 class GenerateConfig:
