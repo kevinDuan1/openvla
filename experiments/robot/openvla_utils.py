@@ -248,8 +248,7 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
             normalized_actions,
         )    
         # --------------------------------------------------
-        return infer_time, actions, generated_ids
-
+        return infer_time, actions, generated_ids 
 
     # 3. - HF inference
     # Process inputs
