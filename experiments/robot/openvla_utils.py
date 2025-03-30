@@ -100,7 +100,7 @@ def hf_to_vllm(vla, processor, cfg):
         del vla.language_model
     # TODO: check vllm load mode, check settings, memory
     # check if async engine is enabled
-    if not cfg.async_engine:
+    if not hasattr(cfg, 'async_engine') or not cfg.async_engine:
         vla.language_model = vllm.LLM(vllm_model_path, 
                                       trust_remote_code=True, 
                                       gpu_memory_utilization=0.7, 
@@ -108,11 +108,11 @@ def hf_to_vllm(vla, processor, cfg):
                                       swap_space = 10, 
                                       enable_chunked_prefill = True, 
                                       enable_prefix_caching = True, 
-                                      max_num_seqs = 10)
+                                      )
     else:
         vla.language_model  = vllm.AsyncLLMEngine.from_engine_args(
                 vllm.AsyncEngineArgs(
-                    model="logs/llama-bridge",
+                    model= vllm_model_path,
                     gpu_memory_utilization=0.64,
                     preemption_mode="swap",
                     swap_space=10,
@@ -174,7 +174,7 @@ def crop_and_resize(image, crop_scale, batch_size):
     return image
 
 
-def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, center_crop=False, max_new_tokens=None, prompts=None):
+def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, center_crop=False, max_new_tokens=None, prompts=None, return_batch_actions=False):
     """Generates an action with the VLA policy."""
 
     image = Image.fromarray(obs["full_image"])
@@ -221,9 +221,9 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         import vllm # only executed once    
         if prompts is None: 
             prompts = [prompt]
-            sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2])
+            sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2]) # [EOS]
         else:
-            sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[29901])
+            sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2, 29901]) # [EOS] and :
         inputs = [processor.tokenizer(p, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE) for p in prompts]
         pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(DEVICE, dtype=torch.bfloat16)
         
@@ -237,7 +237,10 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
             generated_ids.append(i[0].cpu().numpy().tolist() + list(o.outputs[0].token_ids))
 
         # Fetch normalized actions
-        predicted_action_token_ids = np.array(generated_ids[-1][-(vla.get_action_dim(unnorm_key) + 1) : -1])
+        if return_batch_actions:
+            predicted_action_token_ids = np.array([generated_ids[i][-(vla.get_action_dim(unnorm_key) + 1) : -1] for i in range(len(generated_ids))])
+        else:
+            predicted_action_token_ids = np.array(generated_ids[-1][-(vla.get_action_dim(unnorm_key) + 1) : -1])
         discretized_actions = vla.vocab_size - predicted_action_token_ids
         discretized_actions = np.clip(discretized_actions - 1, a_min=0, a_max=vla.bin_centers.shape[0] - 1)
         normalized_actions = vla.bin_centers[discretized_actions]
@@ -265,7 +268,7 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         start_time = time.perf_counter()
         action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, use_cache=True, max_new_tokens=max_new_tokens)
         infer_time = time.perf_counter() - start_time
-        return infer_time, action # action, generated_ids
+        return infer_time, action, [[]] # action, generated_ids
     else: # OpenVLA
         start_time = time.perf_counter()
         action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)
@@ -351,15 +354,15 @@ def get_vla_action_async(vla, processor, base_vla_name, obs, task_label, unnorm_
     
 # M: batch prediction
 class CotTag(enum.Enum):
-    TASK = "TASK:"
-    PLAN = "PLAN:"
-    VISIBLE_OBJECTS = "VISIBLE OBJECTS:"
-    SUBTASK_REASONING = "SUBTASK REASONING:"
-    SUBTASK = "SUBTASK:"
-    MOVE_REASONING = "MOVE REASONING:"
-    MOVE = "MOVE:"
-    GRIPPER_POSITION = "GRIPPER POSITION:"
-    ACTION = "ACTION:"
+    TASK = "TASK: "
+    PLAN = "PLAN: "
+    VISIBLE_OBJECTS = "VISIBLE OBJECTS: "
+    SUBTASK_REASONING = "SUBTASK REASONING: "
+    SUBTASK = "SUBTASK: "
+    MOVE_REASONING = "MOVE REASONING: "
+    MOVE = "MOVE: "
+    GRIPPER_POSITION = "GRIPPER POSITION: "
+    ACTION = "ACTION: "
 
 
 class PromptManager(object):
@@ -398,11 +401,23 @@ class PromptManager(object):
         prompts = []
         prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_description.lower()}? ASSISTANT: "
         for i, t in enumerate(CotTag):
-            prompt = prompt + t.value 
+            prompt = prompt + t.value
             prompts.append(prompt)
             if i == len(CotTag) - 1: break
             try:
                 prompt = prompt + self.subtask_history[t.name][-1] # Use updated history
             except:
                 raise ValueError(f"Subtask {t.name} not found in history, history: {self.subtask_history}")
+        return prompts
+
+    def generate_prompts_faith(self, task_description):
+        """ Generate batch prompts, with history
+        """
+        prompts = []
+        prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_description.lower()}? ASSISTANT: "
+        for i, t in enumerate(CotTag):
+            if i == len(CotTag) - 1: break
+            new_prompt = prompt + "Action: "
+            prompts.append(new_prompt)
+            prompt = prompt + t.value + self.subtask_history[t.name][-1] # Use updated history
         return prompts
