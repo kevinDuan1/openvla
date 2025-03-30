@@ -2,10 +2,18 @@ import asyncio
 from uuid import uuid4
 import vllm
 import torch
-
+import threading
 
 reasoning_res = None
 reason_finished = False
+def start_background_loop(loop):
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+# Create and start a background event loop in its own thread.
+background_loop = asyncio.new_event_loop()
+loop_thread = threading.Thread(target=start_background_loop, args=(background_loop,), daemon=True)
+loop_thread.start()
 
 async def engine_inference(
     model,
@@ -41,12 +49,13 @@ async def run_query(query, engine, params):
     return responses
 
 async def action_request(vla, async_engine, inputs_action, pixel_values, sampling_params):
+    global action_res
     action_res = await engine_inference(vla, async_engine, inputs_action, pixel_values, sampling_params)
     return action_res
 
 async def reasoning_request(vla, async_engine, inputs_reasoning, pixel_values, sampling_params):
+    global reasoning_res
     reasoning_res = await engine_inference(vla, async_engine, inputs_reasoning, pixel_values, sampling_params)
-    reason_finished = True
-    
+
 def get_reason():
     return reasoning_res
