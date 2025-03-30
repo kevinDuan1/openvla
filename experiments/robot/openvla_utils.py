@@ -20,6 +20,7 @@ from experiments.robot.async_utils import (
     action_request,
     reasoning_request,
     get_reason,
+    background_loop
 )
 
 # Initialize important constants and pretty-printing mode in NumPy.
@@ -326,7 +327,7 @@ def get_vla_action_async(vla, processor, base_vla_name, obs, task_label, unnorm_
         pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(DEVICE, dtype=torch.bfloat16)
         
         start_time = time.perf_counter()
-        outputs_action = asyncio.run(action_request(vla, vla.language_model, inputs[-1], pixel_values, sampling_params))
+        outputs_action = asyncio.run_coroutine_threadsafe(action_request(vla, vla.language_model, inputs[-1], pixel_values, sampling_params), background_loop)
         infer_time = time.perf_counter() - start_time 
         outputs_reason = get_reason()
         generated_ids = outputs_reason + outputs_action if outputs_reason else outputs_action
