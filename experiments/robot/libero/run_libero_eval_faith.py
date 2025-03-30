@@ -27,9 +27,9 @@ import draccus
 import numpy as np
 import tqdm
 from libero.libero import benchmark
-import time
+import time 
 import wandb
-from experiments.robot.openvla_utils import hf_to_vllm 
+import torch
 
 # Append current directory so that interpreter can find experiments.robot
 sys.path.append("../..")
@@ -52,6 +52,8 @@ from experiments.robot.robot_utils import (
     set_seed_everywhere,
 )
 
+# M: this prompt manager is specifically designed for ECoT
+from experiments.robot.openvla_utils import PromptManager
 from experiments.robot.openvla_utils import hf_to_vllm 
 
 @dataclass
@@ -65,7 +67,6 @@ class GenerateConfig:
     pretrained_checkpoint: Union[str, Path] = ""     # Pretrained checkpoint path
     load_in_8bit: bool = False                       # (For OpenVLA only) Load with 8-bit quantization
     load_in_4bit: bool = False                       # (For OpenVLA only) Load with 4-bit quantization
-
     center_crop: bool = True                         # Center crop? (if trained w/ random crop image aug)
     norm_stats: str = None                 # Normalization stats for OpenVLA
 
@@ -86,10 +87,10 @@ class GenerateConfig:
     wandb_project: str = "YOUR_WANDB_PROJECT"        # Name of W&B project to log to (use default!)
     wandb_entity: str = "YOUR_WANDB_ENTITY"          # Name of entity to log under
 
-    seed: int = 1                                    # Random Seed (for reproducibility)
-    use_vllm: bool = False                           # Use VLLM for action generation
-    reasoning: bool = False                            # Use reasoning for action generation
-    async_engine: bool = False                           # Use async engine for action generation
+    seed: int = 7                                    # Random Seed (for reproducibility)
+    use_vllm: bool = False
+    async_engine: bool = False
+    use_batch: bool = True
     # fmt: on
 
 
@@ -155,6 +156,8 @@ def eval_libero(cfg: GenerateConfig) -> None:
     inference_times = []
     # Start evaluation
     total_episodes, total_successes = 0, 0
+    faith_results, faith_scores = [], []
+
     for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
         # Get task
         task = task_suite.get_task(task_id)
@@ -177,6 +180,9 @@ def eval_libero(cfg: GenerateConfig) -> None:
             # Set initial states
             obs = env.set_init_state(initial_states[episode_idx])
 
+            # M: batch preprations
+            prompt_manager = PromptManager()
+
             # Setup
             t = 0
             replay_images = []
@@ -195,29 +201,57 @@ def eval_libero(cfg: GenerateConfig) -> None:
             print(f"Starting episode {task_episodes+1}...")
             log_file.write(f"Starting episode {task_episodes+1}...\n")
             while t < max_steps + cfg.num_steps_wait:
-                try:
-                    # IMPORTANT: Do nothing for the first few timesteps because the simulator drops objects
-                    # and we need to wait for them to fall
-                    if t < cfg.num_steps_wait:
-                        obs, reward, done, info = env.step(get_libero_dummy_action(cfg.model_family))
-                        t += 1
-                        continue
+                # IMPORTANT: Do nothing for the first few timesteps because the simulator drops objects
+                # and we need to wait for them to fall
+                if t < cfg.num_steps_wait:
+                    obs, reward, done, info = env.step(get_libero_dummy_action(cfg.model_family))
+                    t += 1
+                    continue
 
-                    # Get preprocessed image
-                    img = get_libero_image(obs, resize_size)
+                # Get preprocessed image
+                img = get_libero_image(obs, resize_size)
 
-                    # Save preprocessed image for replay video
-                    replay_images.append(img)
+                # Save preprocessed image for replay video
+                replay_images.append(img)
 
-                    # Prepare observations dict
-                    # Note: OpenVLA does not take proprio state as input
-                    observation = {
-                        "full_image": img,
-                        "state": np.concatenate(
-                            (obs["robot0_eef_pos"], quat2axisangle(obs["robot0_eef_quat"]), obs["robot0_gripper_qpos"])
-                        ),
-                    }
-                    
+                # Prepare observations dict
+                # Note: OpenVLA does not take proprio state as input
+                observation = {
+                    "full_image": img,
+                    "state": np.concatenate(
+                        (obs["robot0_eef_pos"], quat2axisangle(obs["robot0_eef_quat"]), obs["robot0_gripper_qpos"])
+                    ),
+                }
+                
+                # M: first step to predict full CoT
+                # (a way to initialize the history, but can be done in other ways)
+                if t == cfg.num_steps_wait or not cfg.use_batch:
+                    inference_time, action, generated_ids = get_action(
+                        cfg,
+                        model,
+                        observation,
+                        task_description,
+                        processor=processor,
+                    )
+                    generated_text = processor.batch_decode(generated_ids)[0]
+                    # M: Update prompt history
+                    prompt_manager.update_history(generated_text)
+
+                    # M: test faithfulness, for single-style, first intialize history, then test faithfullness
+                    faith_prompts = prompt_manager.generate_prompts_faith(task_description)
+                    _, faith_actions, _ = get_action(
+                        cfg,
+                        model,
+                        observation,
+                        task_description,
+                        processor=processor,
+                        prompts=faith_prompts, 
+                        max_new_tokens=8,
+                        return_batch_actions=True,
+                    )
+
+                else:
+                    prompts = prompt_manager.generate_prompts(task_description)
                     # Query model to get action
                     inference_time, action, generated_ids = get_action(
                         cfg,
@@ -225,35 +259,57 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         observation,
                         task_description,
                         processor=processor,
-                        max_new_tokens=1024,
-                    ) 
-                    inference_times.append(inference_time)                 
-                    generated_text = processor.batch_decode(generated_ids)[0]
-                    replay_reasoning.append(generated_text)
-                    print(generated_text)
-                      
-                    # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
-                    action = normalize_gripper_action(action, binarize=True)
-                    
-                    # [OpenVLA] The dataloader flips the sign of the gripper action to align with other datasets
-                    # (0 = close, 1 = open), so flip it back (-1 = open, +1 = close) before executing the action
-                    if cfg.model_family == "openvla":
-                        action = invert_gripper_action(action)
+                        prompts=prompts, 
+                        max_new_tokens=60,
+                    )
 
-                    print(f"Inference time: {inference_time:.4f} seconds\n")
-                    print(f"Action: {action}")
-                    # Execute action in environment
-                    obs, reward, done, info = env.step(action.tolist())
-                    if done:
-                        task_successes += 1
-                        total_successes += 1
-                        break
-                    t += 1
+                    # M: test faithfulness, for batch-style, first test faithfullness, then update history!
+                    faith_prompts = prompt_manager.generate_prompts_faith(task_description)
+                    _, faith_actions, _ = get_action(
+                        cfg,
+                        model,
+                        observation,
+                        task_description,
+                        processor=processor,
+                        prompts=faith_prompts, 
+                        max_new_tokens=8,
+                        return_batch_actions=True,
+                    )
 
-                except Exception as e:
-                    print(f"Caught exception: {e}")
-                    log_file.write(f"Caught exception: {e}\n")
+                    # M: Update prompt history
+                    generated_texts = processor.batch_decode(generated_ids)
+                    for i, generated_text in enumerate(generated_texts[:-1]):
+                        prompt_manager.update_history(generated_text+" ", i)
+                    generated_text = generated_texts[-1]
+
+                # Save reasoning results
+                replay_reasoning.append(generated_text)
+                print(f"\nStep: {t}\n", generated_text)
+                print(f"Inference time: {inference_time:.4f} seconds")
+                inference_times.append(inference_time)
+
+                # Save Faithfull Results
+                combined_actions = np.concatenate([faith_actions, np.expand_dims(action, 0)], axis=0) # [9, 7]
+                faith_results.append(combined_actions) 
+                faith_scores.append(np.sum(np.abs(combined_actions[:8] - combined_actions[8:]), axis=-1)) 
+                print("Faith Score: ", faith_scores[-1]) # [8,]
+                
+                # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
+                action = normalize_gripper_action(action, binarize=True)
+                print(f"Action: {action}\n")
+
+                # [OpenVLA] The dataloader flips the sign of the gripper action to align with other datasets
+                # (0 = close, 1 = open), so flip it back (-1 = open, +1 = close) before executing the action
+                if cfg.model_family == "openvla":
+                    action = invert_gripper_action(action)
+
+                # Execute action in environment
+                obs, reward, done, info = env.step(action.tolist())
+                if done:
+                    task_successes += 1
+                    total_successes += 1
                     break
+                t += 1
 
             task_episodes += 1
             total_episodes += 1
@@ -269,9 +325,11 @@ def eval_libero(cfg: GenerateConfig) -> None:
             print(f"Success: {done}")
             print(f"# episodes completed so far: {total_episodes}")
             print(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)")
+            print(f"# faithfulness so far: {np.mean(np.array(faith_scores), axis=0).tolist()}")
             log_file.write(f"Success: {done}\n")
             log_file.write(f"# episodes completed so far: {total_episodes}\n")
             log_file.write(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)\n")
+            log_file.write(f"# faithfulness so far: {np.mean(np.array(faith_scores), axis=0).tolist()}\n")
             log_file.flush()
 
         # Log final results
@@ -287,7 +345,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     f"num_episodes/{task_description}": task_episodes,
                 }
             )
-
+            
     if inference_times:
         total_inference_time = sum(inference_times)
         num_steps = len(inference_times)
@@ -302,6 +360,11 @@ def eval_libero(cfg: GenerateConfig) -> None:
                 "average_inference_time": average_inference_time,
                 "throughput": throughput,
         })
+        faith_results = np.array(faith_results)
+        faith_filepath = local_log_filepath.replace('.txt', '.npy')
+        with open(faith_filepath, "wb") as wf:
+            np.save(wf, faith_results)
+
     # Save local log file
     log_file.close()
 

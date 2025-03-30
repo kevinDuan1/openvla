@@ -11,6 +11,7 @@ import torch
 from PIL import Image
 from transformers import AutoConfig, AutoImageProcessor, AutoModelForVision2Seq, AutoProcessor
 from transformers.utils import TensorType
+import time 
 
 from prismatic.extern.hf.configuration_prismatic import OpenVLAConfig
 from prismatic.extern.hf.modeling_prismatic import OpenVLAForActionPrediction
@@ -92,7 +93,26 @@ def hf_to_vllm(vla, processor, cfg):
     if hasattr(vla, "language_model"):
         del vla.language_model
     # TODO: check vllm load mode, check settings, memory
-    vla.language_model = vllm.LLM(vllm_model_path, trust_remote_code=True, gpu_memory_utilization=0.7)
+    # check if async engine is enabled
+    if not cfg.async_engine:
+        vla.language_model = vllm.LLM(vllm_model_path, 
+                                      trust_remote_code=True, 
+                                      gpu_memory_utilization=0.7, 
+                                      preemption_mode='swap', 
+                                      swap_space = 10, 
+                                      enable_chunked_prefill = True, 
+                                      enable_prefix_caching = True, 
+                                      max_num_seqs = 10)
+    else:
+        vla.language_model  = vllm.AsyncLLMEngine.from_engine_args(
+                vllm.AsyncEngineArgs(
+                    model="logs/llama-bridge",
+                    gpu_memory_utilization=0.64,
+                    preemption_mode="swap",
+                    swap_space=10,
+                    disable_log_requests=True,
+                )
+        )
     return vla
 
 
@@ -120,7 +140,7 @@ def crop_and_resize(image, crop_scale, batch_size):
     if image.shape.ndims == 3:
         image = tf.expand_dims(image, axis=0)
         expanded_dims = True
-
+    
     # Get height and width of crop
     new_heights = tf.reshape(tf.clip_by_value(tf.sqrt(crop_scale), 0, 1), shape=(batch_size,))
     new_widths = tf.reshape(tf.clip_by_value(tf.sqrt(crop_scale), 0, 1), shape=(batch_size,))
@@ -148,13 +168,12 @@ def crop_and_resize(image, crop_scale, batch_size):
     return image
 
 
-def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, center_crop=False, max_new_tokens=None, prompts=None):
+def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, center_crop=False, max_new_tokens=None, prompts=None, return_batch_actions=False):
     """Generates an action with the VLA policy."""
 
-    # 1. Process image
     image = Image.fromarray(obs["full_image"])
     image = image.convert("RGB")
-
+    infer_time = 0
     # (If trained with image augmentations) Center crop image and then resize back up to original size.
     # IMPORTANT: Let's say crop scale == 0.9. To get the new height and width (post-crop), multiply
     #            the original height and width by sqrt(0.9) -- not 0.9!
@@ -179,8 +198,7 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         # Convert back to PIL Image
         image = Image.fromarray(image.numpy()) 
         image = image.convert("RGB")
-        print(f'image size: {image.size}')
-
+        # print(f'image size: {image.size}')
 
     # 2. Process original prompt
     if "openvla-v01" in base_vla_name:  # OpenVLA v0.1
@@ -192,31 +210,34 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
     else:  # OpenVLA 
         prompt = f"In: What action should the robot take to {task_label.lower()}?\nOut:"
 
-    # 3. VLLM inference
+    # 3. VLLM inference batched 
     if hasattr(vla, 'use_vllm') and vla.use_vllm:
-
-        import vllm # only executed once
-
-        if prompts is None: prompts = [prompt]
+        import vllm # only executed once    
+        if prompts is None: 
+            prompts = [prompt]
+            sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2]) # [EOS]
+        else:
+            sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2, 29901]) # [EOS] and :
         inputs = [processor.tokenizer(p, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE) for p in prompts]
         pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(DEVICE, dtype=torch.bfloat16)
-        sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens)
-        # TODO: check vllm inference parameters 
+        
+        start_time = time.perf_counter()
         outputs = vla.vllm_inference(input_ids=inputs, pixel_values=pixel_values, sampling_params=sampling_params)
-
+        infer_time = time.perf_counter() - start_time 
         # --------------------------------------------------
         # TODO: this should be put into modeling_prismatic.py
         generated_ids = []
         for i, o in zip(inputs, outputs):
             generated_ids.append(i[0].cpu().numpy().tolist() + list(o.outputs[0].token_ids))
-        # generated_ids = np.array(generated_ids)
 
         # Fetch normalized actions
-        predicted_action_token_ids = np.array(generated_ids[-1][-(vla.get_action_dim(unnorm_key) + 1) : -1])
+        if return_batch_actions:
+            predicted_action_token_ids = np.array([generated_ids[i][-(vla.get_action_dim(unnorm_key) + 1) : -1] for i in range(len(generated_ids))])
+        else:
+            predicted_action_token_ids = np.array(generated_ids[-1][-(vla.get_action_dim(unnorm_key) + 1) : -1])
         discretized_actions = vla.vocab_size - predicted_action_token_ids
         discretized_actions = np.clip(discretized_actions - 1, a_min=0, a_max=vla.bin_centers.shape[0] - 1)
         normalized_actions = vla.bin_centers[discretized_actions]
-
         # Unnormalize actions
         action_norm_stats = vla.get_action_stats(unnorm_key)
         mask = action_norm_stats.get("mask", np.ones_like(action_norm_stats["q01"], dtype=bool))
@@ -225,9 +246,9 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
             mask,
             0.5 * (normalized_actions + 1) * (action_high - action_low) + action_low,
             normalized_actions,
-        )
+        )    
         # --------------------------------------------------
-        return actions, generated_ids
+        return infer_time, actions, generated_ids 
 
     # 3. - HF inference
     # Process inputs
@@ -236,14 +257,17 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         inputs = processor(prompts, image, padding=True).to(DEVICE, dtype=torch.bfloat16)
     else: 
         inputs = processor(prompt, image).to(DEVICE, dtype=torch.bfloat16)
-
     # Get action
     if 'ecot' in base_vla_name: # ECoT
+        start_time = time.perf_counter()
         action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, use_cache=True, max_new_tokens=max_new_tokens)
-        return action # action, generated_ids
+        infer_time = time.perf_counter() - start_time
+        return infer_time, action # action, generated_ids
     else: # OpenVLA
+        start_time = time.perf_counter()
         action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)
-        return action, [[]]
+        infer_time = time.perf_counter() - start_time
+        return infer_time, action, [[]]
 
 
 # M: batch prediction
@@ -265,7 +289,7 @@ class PromptManager(object):
         # Intialize subtask history
         self.subtask_history = dict()
         for t in CotTag:
-            self.subtask_history[t.name] = []
+            self.subtask_history[t.name] = [""]
 
     def update_history(self, generated_text, index=None):
         """ Update subtask history based on 
@@ -295,8 +319,23 @@ class PromptManager(object):
         prompts = []
         prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_description.lower()}? ASSISTANT: "
         for i, t in enumerate(CotTag):
-            prompt = prompt + t.value 
+            prompt = prompt + t.value
             prompts.append(prompt)
             if i == len(CotTag) - 1: break
-            prompt = prompt + self.subtask_history[t.name][-1] # Use updated history
+            try:
+                prompt = prompt + self.subtask_history[t.name][-1] # Use updated history
+            except:
+                raise ValueError(f"Subtask {t.name} not found in history, history: {self.subtask_history}")
+        return prompts
+
+    def generate_prompts_faith(self, task_description):
+        """ Generate batch prompts, with history
+        """
+        prompts = []
+        prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_description.lower()}? ASSISTANT: "
+        for i, t in enumerate(CotTag):
+            if i == len(CotTag) - 1: break
+            new_prompt = prompt + "Action: "
+            prompts.append(new_prompt)
+            prompt = prompt + t.value + self.subtask_history[t.name][-1] # Use updated history
         return prompts

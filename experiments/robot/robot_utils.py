@@ -25,7 +25,6 @@ OPENVLA_V01_SYSTEM_PROMPT = (
     "The assistant gives helpful, detailed, and polite answers to the user's questions."
 )
 
-
 def set_seed_everywhere(seed: int):
     """Sets the random seed for Python, NumPy, and PyTorch functions."""
     torch.manual_seed(seed)
@@ -60,17 +59,17 @@ def get_image_resize_size(cfg):
     return resize_size
 
 
-def get_action(cfg, model, obs, task_label, processor=None, max_new_tokens=1024, prompts=None):
+def get_action(cfg, model, obs, task_label, processor=None, max_new_tokens=1024, prompts=None, return_batch_actions=False):
     """Queries the model to get an action."""
     if cfg.model_family == "openvla":
-        action = get_vla_action(
+        t, action, reason = get_vla_action(
             model, processor, cfg.pretrained_checkpoint, obs, task_label, cfg.unnorm_key, center_crop=cfg.center_crop, max_new_tokens=max_new_tokens,
-            prompts=prompts,
+            prompts=prompts, return_batch_actions=return_batch_actions
         )
-        # assert action.shape == (ACTION_DIM,)
     else:
         raise ValueError("Unexpected `model_family` found in config.")
-    return action
+
+    return t, action, reason
 
 
 def normalize_gripper_action(action, binarize=True):
