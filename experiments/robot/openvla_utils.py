@@ -113,14 +113,13 @@ def hf_to_vllm(vla, processor, cfg):
         vla.language_model  = vllm.AsyncLLMEngine.from_engine_args(
                 vllm.AsyncEngineArgs(
                     model= vllm_model_path,
-                    gpu_memory_utilization=0.64,
+                    gpu_memory_utilization=0.63,
                     preemption_mode="swap",
-                    swap_space=10,
+                    swap_space=12,
                     disable_log_requests=True,
                 )
         )
     return vla
-
 
 def get_processor(cfg):
     """Get VLA model's Hugging Face processor."""
@@ -321,25 +320,39 @@ def get_vla_action_async(vla, processor, base_vla_name, obs, task_label, unnorm_
     # 3. VLLM inference batched 
     if hasattr(vla, 'use_vllm') and vla.use_vllm:
         import vllm # only executed once
+        prefill = False
         if prompts is None: 
             prompts = [prompt]
-            sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2])
+            sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2]) # [EOS]
+            prefill = True
         else:
-            sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[29901])
-        inputs = [processor.tokenizer(p, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE) for p in prompts]
+            sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2, 29901]) # [EOS] and :
+        prompts_reason = prompts[:-1]
+        prompts_action = prompts[-1]
+        inputs_reason = [processor.tokenizer(p, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE) for p in prompts_reason]
+        inputs_action = [processor.tokenizer(prompts_action, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE)]
         pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(DEVICE, dtype=torch.bfloat16)
-        
+        # start async tasks
         start_time = time.perf_counter()
-        action_task = asyncio.run_coroutine_threadsafe(action_request(vla, vla.language_model, inputs[-1], pixel_values, sampling_params), background_loop)
+        action_task = asyncio.run_coroutine_threadsafe(action_request(vla, vla.language_model, inputs_action, pixel_values, sampling_params), background_loop)
+        asyncio.run_coroutine_threadsafe(reasoning_request(vla, vla.language_model, inputs_reason, pixel_values, sampling_params), background_loop)
         while not action_task.done():
             time.sleep(0.1)
-        generated_ids = action_task.result()
         infer_time = time.perf_counter() - start_time 
+
+        action_ids = inputs_action[0].cpu().numpy().tolist()[0] + action_task.result()[0]
+        generated_ids = []
+        for i, o in zip(inputs_reason, get_reason()):
+            generated_ids.append(i[0].cpu().numpy().tolist() + list(o))
+        generated_ids.append(action_ids)
+        # print(f'Get reason {get_reason()}')
+        # print(f"Generated ids: {generated_ids}")
         # Fetch normalized actions
         predicted_action_token_ids = np.array(generated_ids[-1][-(vla.get_action_dim(unnorm_key) + 1) : -1])
         discretized_actions = vla.vocab_size - predicted_action_token_ids
         discretized_actions = np.clip(discretized_actions - 1, a_min=0, a_max=vla.bin_centers.shape[0] - 1)
         normalized_actions = vla.bin_centers[discretized_actions]
+        
         # Unnormalize actions
         action_norm_stats = vla.get_action_stats(unnorm_key)
         mask = action_norm_stats.get("mask", np.ones_like(action_norm_stats["q01"], dtype=bool))

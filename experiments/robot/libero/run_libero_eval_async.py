@@ -234,7 +234,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     generated_text = processor.batch_decode(generated_ids)[0]
                     # M: Update prompt history
                     prompt_manager.update_history(generated_text)
-
                 else:
                     prompts = prompt_manager.generate_prompts(task_description)
                     # Query model to get action
@@ -245,11 +244,12 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         task_description,
                         processor=processor,
                         prompts=prompts, 
-                        max_new_tokens=60,
+                        max_new_tokens=80,
                     )
-                    
                     generated_texts = processor.batch_decode(generated_ids)
+                    
                     for i, generated_text in enumerate(generated_texts[:-1]):
+                        # print(f"\033[91mGenerated texts: {generated_text}\033[0m")
                         prompt_manager.update_history(generated_text+': ', i)
                     generated_text = generated_texts[-1]
 

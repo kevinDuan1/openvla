@@ -13,14 +13,14 @@ def start_background_loop(loop):
 background_loop = asyncio.new_event_loop()
 loop_thread = threading.Thread(target=start_background_loop, args=(background_loop,), daemon=True)
 loop_thread.start()
-reasoning_res = None
+reasoning_res = []
 
 async def engine_inference(
     model,
     engine,
-    input_ids = None,
-    pixel_values = None,
-    sampling_params = None,
+    input_ids=None,
+    pixel_values=None,
+    sampling_params=None,
 ):
     # Visual Feature Extraction (shared across batched lanuaged inputs)
     patch_features = model.vision_backbone(pixel_values)
@@ -28,14 +28,22 @@ async def engine_inference(
     embds = model.input_embds
     input_embeddings = [embds(ids) for ids in input_ids]
     # Build Multimodal Embeddings & Attention Mask =>> Prismatic defaults to inserting after <BOS> token (1:)
-    multimodal_embeddings = [torch.cat([inemb[:, :1, :], projected_patch_embeddings, inemb[:, 1:, :]], dim=1).squeeze(0) for inemb in input_embeddings]#[0] 
+    multimodal_embeddings = [
+        torch.cat([inemb[:, :1, :], projected_patch_embeddings, inemb[:, 1:, :]], dim=1).squeeze(0)
+        for inemb in input_embeddings
+    ]
     prompt = [[32000] * emb.shape[-2] for emb in multimodal_embeddings]
-    inputs = [{"prompt_token_ids": p, "multi_modal_data": {"image":m}} for p, m in zip(prompt, multimodal_embeddings)]
+    inputs = [{"prompt_token_ids": p, "multi_modal_data": {"image": m}} for p, m in zip(prompt, multimodal_embeddings)]
     tasks = [asyncio.create_task(run_query(vllm.inputs.TokensPrompt(**q), engine, sampling_params)) for q in inputs]
+    
+    # Use asyncio.gather to maintain input order
+    results_list = await asyncio.gather(*tasks)
+    
+    # If each task returns a list, you can flatten them if needed:
     results = []
-    for task in asyncio.as_completed(tasks):
-        result = await task
-        results.append(result)
+    for result in results_list:
+        results += result
+
     return results
 
 async def run_query(query, engine, params):
@@ -45,7 +53,7 @@ async def run_query(query, engine, params):
         final_output = output
     responses = []
     for output in final_output.outputs:
-        responses.append(output[0].token_ids)
+        responses.append(list(output.token_ids)) 
     return responses
 
 async def action_request(vla, async_engine, inputs_action, pixel_values, sampling_params):
@@ -54,7 +62,10 @@ async def action_request(vla, async_engine, inputs_action, pixel_values, samplin
 
 async def reasoning_request(vla, async_engine, inputs_reasoning, pixel_values, sampling_params):
     global reasoning_res
+    if len(inputs_reasoning) == 0:
+        return reasoning_res
     reasoning_res = await engine_inference(vla, async_engine, inputs_reasoning, pixel_values, sampling_params)
 
 def get_reason():
+    global reasoning_res
     return reasoning_res
