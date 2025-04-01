@@ -293,12 +293,12 @@ def eval_libero(cfg: GenerateConfig) -> None:
             log_file.write(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)\n")
             log_file.flush()
 
-        # clear KV cache
-        # model.language_model.engine.sleep(level=2)
-        # model.language_model.engine.wake_up()
-        
-        if cfg.use_vllm:
-            model = hf_to_vllm(model, processor, cfg)
+            # clear KV cache
+            model.language_model.engine.sleep(level=2)
+            model.language_model.engine.wake_up()
+
+        # if cfg.use_vllm:
+        #     model = hf_to_vllm(model, processor, cfg)
 
         # Log final results
         print(f"Current task success rate: {float(task_successes) / float(task_episodes)}")
