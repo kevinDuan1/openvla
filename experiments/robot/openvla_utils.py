@@ -119,6 +119,7 @@ def hf_to_vllm(vla, processor, cfg):
                     swap_space=12,
                     disable_log_requests=True,
                     enable_prefix_caching=True,
+                    enable_sleep_mode=True,
                     # max_num_seqs=128
                 )
         )
