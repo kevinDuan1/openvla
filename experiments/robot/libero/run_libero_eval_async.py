@@ -294,8 +294,9 @@ def eval_libero(cfg: GenerateConfig) -> None:
             log_file.flush()
 
             # clear KV cache
-            model.language_model.engine.sleep(level=2)
-            model.language_model.engine.wake_up()
+            # time.sleep(5)
+            # model.language_model.engine.sleep(level=2)
+            # model.language_model.engine.wake_up()
 
         # if cfg.use_vllm:
         #     model = hf_to_vllm(model, processor, cfg)
