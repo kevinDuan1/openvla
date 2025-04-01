@@ -113,10 +113,12 @@ def hf_to_vllm(vla, processor, cfg):
         vla.language_model  = vllm.AsyncLLMEngine.from_engine_args(
                 vllm.AsyncEngineArgs(
                     model= vllm_model_path,
-                    gpu_memory_utilization=0.63,
+                    gpu_memory_utilization=0.62,
                     preemption_mode="swap",
                     swap_space=12,
                     disable_log_requests=True,
+                    enable_prefix_caching=True,
+                    # max_num_seqs=128
                 )
         )
     return vla
@@ -320,63 +322,62 @@ def get_vla_action_async(vla, processor, base_vla_name, obs, task_label, unnorm_
     # 3. VLLM inference batched 
     if hasattr(vla, 'use_vllm') and vla.use_vllm:
         import vllm # only executed once
-        prefill = False
-        if prompts is None: 
-            prompts = [prompt]
-            sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2]) # [EOS]
-            prefill = True
-        else:
-            sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2, 29901]) # [EOS] and :
-        prompts_reason = prompts[:-1]
-        prompts_action = prompts[-1]
-        inputs_reason = [processor.tokenizer(p, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE) for p in prompts_reason]
-        inputs_action = [processor.tokenizer(prompts_action, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE)]
-        pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(DEVICE, dtype=torch.bfloat16)
-        # start async tasks
-        start_time = time.perf_counter()
-        action_task = asyncio.run_coroutine_threadsafe(action_request(vla, vla.language_model, inputs_action, pixel_values, sampling_params), background_loop)
-        asyncio.run_coroutine_threadsafe(reasoning_request(vla, vla.language_model, inputs_reason, pixel_values, sampling_params), background_loop)
-        while not action_task.done():
-            time.sleep(0.1)
-        infer_time = time.perf_counter() - start_time 
+        with torch.no_grad():
+            if prompts is None: 
+                prompts = [prompt]
+                sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2]) # [EOS]
+                prefill = True
+            else:
+                sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2, 29901]) # [EOS] and :
+            prompts_reason = prompts[:-1]
+            prompts_action = prompts[-1]
+            inputs_reason = [processor.tokenizer(p, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE) for p in prompts_reason]
+            inputs_action = [processor.tokenizer(prompts_action, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE)]
+            pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(DEVICE, dtype=torch.bfloat16)
+            # start async tasks
+            start_time = time.perf_counter()
+            action_task = asyncio.run_coroutine_threadsafe(action_request(vla, vla.language_model, inputs_action, pixel_values, sampling_params), background_loop)
+            asyncio.run_coroutine_threadsafe(reasoning_request(vla, vla.language_model, inputs_reason, pixel_values, sampling_params), background_loop)
+            while not action_task.done():
+                time.sleep(0.05)
+            infer_time = time.perf_counter() - start_time 
 
-        action_ids = inputs_action[0].cpu().numpy().tolist()[0] + action_task.result()[0]
-        generated_ids = []
-        for i, o in zip(inputs_reason, get_reason()):
-            generated_ids.append(i[0].cpu().numpy().tolist() + list(o))
-        generated_ids.append(action_ids)
-        # print(f'Get reason {get_reason()}')
-        # print(f"Generated ids: {generated_ids}")
-        # Fetch normalized actions
-        predicted_action_token_ids = np.array(generated_ids[-1][-(vla.get_action_dim(unnorm_key) + 1) : -1])
-        discretized_actions = vla.vocab_size - predicted_action_token_ids
-        discretized_actions = np.clip(discretized_actions - 1, a_min=0, a_max=vla.bin_centers.shape[0] - 1)
-        normalized_actions = vla.bin_centers[discretized_actions]
-        
-        # Unnormalize actions
-        action_norm_stats = vla.get_action_stats(unnorm_key)
-        mask = action_norm_stats.get("mask", np.ones_like(action_norm_stats["q01"], dtype=bool))
-        action_high, action_low = np.array(action_norm_stats["q99"]), np.array(action_norm_stats["q01"])
-        actions = np.where(
-            mask,
-            0.5 * (normalized_actions + 1) * (action_high - action_low) + action_low,
-            normalized_actions,
-        )    
+            action_ids = inputs_action[0].cpu().numpy().tolist()[0] + action_task.result()[0]
+            generated_ids = []
+            for i, o in zip(inputs_reason, get_reason()):
+                generated_ids.append(i[0].cpu().numpy().tolist() + list(o))
+            generated_ids.append(action_ids)
+            # print(f'Get reason {get_reason()}')
+            # print(f"Generated ids: {generated_ids}")
+            # Fetch normalized actions
+            predicted_action_token_ids = np.array(generated_ids[-1][-(vla.get_action_dim(unnorm_key) + 1) : -1])
+            discretized_actions = vla.vocab_size - predicted_action_token_ids
+            discretized_actions = np.clip(discretized_actions - 1, a_min=0, a_max=vla.bin_centers.shape[0] - 1)
+            normalized_actions = vla.bin_centers[discretized_actions]
+            
+            # Unnormalize actions
+            action_norm_stats = vla.get_action_stats(unnorm_key)
+            mask = action_norm_stats.get("mask", np.ones_like(action_norm_stats["q01"], dtype=bool))
+            action_high, action_low = np.array(action_norm_stats["q99"]), np.array(action_norm_stats["q01"])
+            actions = np.where(
+                mask,
+                0.5 * (normalized_actions + 1) * (action_high - action_low) + action_low,
+                normalized_actions,
+            )    
         # --------------------------------------------------
         return infer_time, actions, generated_ids
     
 # M: batch prediction
 class CotTag(enum.Enum):
-    TASK = "TASK: "
-    PLAN = "PLAN: "
-    VISIBLE_OBJECTS = "VISIBLE OBJECTS: "
-    SUBTASK_REASONING = "SUBTASK REASONING: "
-    SUBTASK = "SUBTASK: "
-    MOVE_REASONING = "MOVE REASONING: "
-    MOVE = "MOVE: "
-    GRIPPER_POSITION = "GRIPPER POSITION: "
-    ACTION = "ACTION: "
-
+    TASK = "TASK:"
+    PLAN = "PLAN:"
+    VISIBLE_OBJECTS = "VISIBLE OBJECTS:"
+    SUBTASK_REASONING = "SUBTASK REASONING:"
+    SUBTASK = "SUBTASK:"
+    MOVE_REASONING = "MOVE REASONING:"
+    MOVE = "MOVE:"
+    GRIPPER_POSITION = "GRIPPER POSITION:"
+    ACTION = "ACTION:"
 
 class PromptManager(object):
                         
@@ -403,10 +404,12 @@ class PromptManager(object):
         for i in range(start_tag_id, end_tag_id):
             start_idx = generated_text.find(cottag_list[i].value)
             end_idx = generated_text.find(cottag_list[i+1].value)
+            # print(generated_text)
+            # print(f'\033[92m cotag {cottag_list[i].value} start: {start_idx}, end: {end_idx}\033[0m')
             if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
                 subtask_text =  generated_text[start_idx+len(cottag_list[i].value):end_idx]
+                # print(f"\033[91m subtext {cottag_list[i].value}: {subtask_text}\033[0m")
                 self.subtask_history[cottag_list[i].name].append(subtask_text)
-
 
     def generate_prompts(self, task_description):
         """ Generate batch prompts, with history

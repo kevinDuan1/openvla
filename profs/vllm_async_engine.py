@@ -64,10 +64,11 @@ sampling_params = SamplingParams(temperature=0, max_tokens=60, stop_token_ids=[2
 async_engine = AsyncLLMEngine.from_engine_args(
         AsyncEngineArgs(
             model="logs/llama-bridge",
-            gpu_memory_utilization=0.64,
+            gpu_memory_utilization=0.7,
             preemption_mode="swap",
             swap_space=10,
             disable_log_requests=True,
+            enable_sleep_mode=True,
         )
 )
 
@@ -143,7 +144,6 @@ inputs_reason = [processor.tokenizer(p, return_tensors=TensorType.PYTORCH)['inpu
 inputs_action = [processor.tokenizer(prompts_action, return_tensors=TensorType.PYTORCH)['input_ids'].to(device)]
 pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(device, dtype=torch.bfloat16)
 
-
 def get_outputs(model, engine, inputs, pixel_values, sampling_params):    
     start = time.perf_counter()
     result = asyncio.run(engine_inference(vla, async_engine, inputs_reason, pixel_values, sampling_params))
@@ -194,12 +194,22 @@ thread.start()
 
 asyncio.run_coroutine_threadsafe(reasoning_request_task(), background_loop)
 action_future = asyncio.run_coroutine_threadsafe(action_request_task(), background_loop)
-
-
 while not action_future.done():
     # Wait for the action task to complete
     time.sleep(0.1)
 
-time.sleep(2)
+time.sleep(10)
 print("Action result:", action_result)
 print("Reasoning result:", reasoning_result)
+
+# Stop the background loop
+async_engine.engine.sleep(level=2)
+async_engine.engine.wake_up()
+print('\n\n\n\n\n')
+print("is background loop running:", background_loop.is_running())
+
+asyncio.run_coroutine_threadsafe(reasoning_request_task(), background_loop)
+action_future = asyncio.run_coroutine_threadsafe(action_request_task(), background_loop)
+
+while not action_future.done():
+    time.sleep(0.1)

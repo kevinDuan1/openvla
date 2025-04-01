@@ -65,6 +65,7 @@ async def reasoning_request(vla, async_engine, inputs_reasoning, pixel_values, s
     if len(inputs_reasoning) == 0:
         return reasoning_res
     reasoning_res = await engine_inference(vla, async_engine, inputs_reasoning, pixel_values, sampling_params)
+    
 
 def get_reason():
     global reasoning_res

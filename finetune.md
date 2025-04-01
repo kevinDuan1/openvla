@@ -57,6 +57,9 @@ python experiments/robot/libero/run_libero_eval_batch.py \
   --center_crop True \
   --use_vllm True
 
+# async evaluation
+# use vllm v1
+# export VLLM_USE_V1=1
 python experiments/robot/libero/run_libero_eval_async.py \
   --model_family openvla \
   --pretrained_checkpoint /home/zhekai/code/embodied-CoT/outputs/ecot-openvla-7b-oxe+libero_object_no_noops+b1+lr-0.0005+lora-r32+dropout-0.0 \

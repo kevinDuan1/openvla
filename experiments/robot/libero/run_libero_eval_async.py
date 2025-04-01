@@ -247,10 +247,9 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         max_new_tokens=80,
                     )
                     generated_texts = processor.batch_decode(generated_ids)
-                    
                     for i, generated_text in enumerate(generated_texts[:-1]):
                         # print(f"\033[91mGenerated texts: {generated_text}\033[0m")
-                        prompt_manager.update_history(generated_text+': ', i)
+                        prompt_manager.update_history(generated_text, i)
                     generated_text = generated_texts[-1]
 
                 # Save reasoning results
@@ -294,6 +293,13 @@ def eval_libero(cfg: GenerateConfig) -> None:
             log_file.write(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)\n")
             log_file.flush()
 
+        # clear KV cache
+        # model.language_model.engine.sleep(level=2)
+        # model.language_model.engine.wake_up()
+        
+        if cfg.use_vllm:
+            model = hf_to_vllm(model, processor, cfg)
+
         # Log final results
         print(f"Current task success rate: {float(task_successes) / float(task_episodes)}")
         print(f"Current total success rate: {float(total_successes) / float(total_episodes)}")
@@ -322,9 +328,9 @@ def eval_libero(cfg: GenerateConfig) -> None:
                 "average_inference_time": average_inference_time,
                 "throughput": throughput,
         })
+            
     # Save local log file
     log_file.close()
-
     # Push total metrics and local log file to wandb
     if cfg.use_wandb:
         wandb.log(
@@ -334,7 +340,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
             }
         )
         wandb.save(local_log_filepath)
-
 
 if __name__ == "__main__":
     eval_libero()
