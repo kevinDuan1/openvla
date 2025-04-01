@@ -87,7 +87,8 @@ def get_vla(cfg):
 def hf_to_vllm(vla, processor, cfg):
     import vllm
     # Get imbeddings
-    vla.input_embds = vla.language_model.get_input_embeddings()
+    if vla.input_embds is None:
+        vla.input_embds = vla.language_model.get_input_embeddings()
 
     # Save language model 
     vllm_model_path = f"logs/{cfg.pretrained_checkpoint.replace('/', '_')}-vllm"
