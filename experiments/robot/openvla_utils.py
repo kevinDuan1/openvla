@@ -272,15 +272,15 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
 
 # M: batch prediction
 class CotTag(enum.Enum):
-    TASK = "TASK: "
-    PLAN = "PLAN: "
-    VISIBLE_OBJECTS = "VISIBLE OBJECTS: "
-    SUBTASK_REASONING = "SUBTASK REASONING: "
-    SUBTASK = "SUBTASK: "
-    MOVE_REASONING = "MOVE REASONING: "
-    MOVE = "MOVE: "
-    GRIPPER_POSITION = "GRIPPER POSITION: "
-    ACTION = "ACTION: "
+    TASK = "TASK:"
+    PLAN = "PLAN:"
+    VISIBLE_OBJECTS = "VISIBLE OBJECTS:"
+    SUBTASK_REASONING = "SUBTASK REASONING:"
+    SUBTASK = "SUBTASK:"
+    MOVE_REASONING = "MOVE REASONING:"
+    MOVE = "MOVE:"
+    GRIPPER_POSITION = "GRIPPER POSITION:"
+    ACTION = "ACTION:"
 
 
 class PromptManager(object):

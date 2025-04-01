@@ -245,12 +245,12 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         task_description,
                         processor=processor,
                         prompts=prompts, 
-                        max_new_tokens=60,
+                        max_new_tokens=80, # 60
                     )
                     generated_texts = processor.batch_decode(generated_ids)
                     for i, generated_text in enumerate(generated_texts[:-1]):
                         # print("\033[32m" + f"Generated texts: {generated_text}" + "\033[0m")
-                        prompt_manager.update_history(generated_text+" ", i) # since text ends with :
+                        prompt_manager.update_history(generated_text, i) # since text ends with :
                     generated_text = generated_texts[-1]
 
                 # Save reasoning results
