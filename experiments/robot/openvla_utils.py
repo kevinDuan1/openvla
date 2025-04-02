@@ -218,65 +218,66 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_label.lower()}? ASSISTANT: TASK:"
     else:  # OpenVLA 
         prompt = f"In: What action should the robot take to {task_label.lower()}?\nOut:"
+    with torch.no_grad():
+        # 3. VLLM inference batched 
+        if hasattr(vla, 'use_vllm') and vla.use_vllm:
+            import vllm # only executed once    
+            
+            if prompts is None: 
+                prompts = [prompt]
+                sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2]) # [EOS]
+            else:
+                sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2, 29901]) # [EOS] and :
+            inputs = [processor.tokenizer(p, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE) for p in prompts]
+            pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(DEVICE, dtype=torch.bfloat16)
+            
+            start_time = time.perf_counter()
+            outputs = vla.vllm_inference(input_ids=inputs, pixel_values=pixel_values, sampling_params=sampling_params)
+            infer_time = time.perf_counter() - start_time 
+            # --------------------------------------------------
+            # TODO: this should be put into modeling_prismatic.py
+            generated_ids = []
+            for i, o in zip(inputs, outputs):
+                generated_ids.append(i[0].cpu().numpy().tolist() + list(o.outputs[0].token_ids))
 
-    # 3. VLLM inference batched 
-    if hasattr(vla, 'use_vllm') and vla.use_vllm:
-        import vllm # only executed once    
-        if prompts is None: 
-            prompts = [prompt]
-            sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2]) # [EOS]
-        else:
-            sampling_params = vllm.SamplingParams(temperature=0, max_tokens=max_new_tokens, stop_token_ids=[2, 29901]) # [EOS] and :
-        inputs = [processor.tokenizer(p, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE) for p in prompts]
-        pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(DEVICE, dtype=torch.bfloat16)
+            # Fetch normalized actions
+            if return_batch_actions:
+                predicted_action_token_ids = np.array([generated_ids[i][-(vla.get_action_dim(unnorm_key) + 1) : -1] for i in range(len(generated_ids))])
+            else:
+                predicted_action_token_ids = np.array(generated_ids[-1][-(vla.get_action_dim(unnorm_key) + 1) : -1])
+            discretized_actions = vla.vocab_size - predicted_action_token_ids
+            discretized_actions = np.clip(discretized_actions - 1, a_min=0, a_max=vla.bin_centers.shape[0] - 1)
+            normalized_actions = vla.bin_centers[discretized_actions]
+            # Unnormalize actions
+            action_norm_stats = vla.get_action_stats(unnorm_key)
+            mask = action_norm_stats.get("mask", np.ones_like(action_norm_stats["q01"], dtype=bool))
+            action_high, action_low = np.array(action_norm_stats["q99"]), np.array(action_norm_stats["q01"])
+            actions = np.where(
+                mask,
+                0.5 * (normalized_actions + 1) * (action_high - action_low) + action_low,
+                normalized_actions,
+            )    
+            # --------------------------------------------------
+            return infer_time, actions, generated_ids
         
-        start_time = time.perf_counter()
-        outputs = vla.vllm_inference(input_ids=inputs, pixel_values=pixel_values, sampling_params=sampling_params)
-        infer_time = time.perf_counter() - start_time 
-        # --------------------------------------------------
-        # TODO: this should be put into modeling_prismatic.py
-        generated_ids = []
-        for i, o in zip(inputs, outputs):
-            generated_ids.append(i[0].cpu().numpy().tolist() + list(o.outputs[0].token_ids))
-
-        # Fetch normalized actions
-        if return_batch_actions:
-            predicted_action_token_ids = np.array([generated_ids[i][-(vla.get_action_dim(unnorm_key) + 1) : -1] for i in range(len(generated_ids))])
-        else:
-            predicted_action_token_ids = np.array(generated_ids[-1][-(vla.get_action_dim(unnorm_key) + 1) : -1])
-        discretized_actions = vla.vocab_size - predicted_action_token_ids
-        discretized_actions = np.clip(discretized_actions - 1, a_min=0, a_max=vla.bin_centers.shape[0] - 1)
-        normalized_actions = vla.bin_centers[discretized_actions]
-        # Unnormalize actions
-        action_norm_stats = vla.get_action_stats(unnorm_key)
-        mask = action_norm_stats.get("mask", np.ones_like(action_norm_stats["q01"], dtype=bool))
-        action_high, action_low = np.array(action_norm_stats["q99"]), np.array(action_norm_stats["q01"])
-        actions = np.where(
-            mask,
-            0.5 * (normalized_actions + 1) * (action_high - action_low) + action_low,
-            normalized_actions,
-        )    
-        # --------------------------------------------------
-        return infer_time, actions, generated_ids
-    
-    # 3. - HF inference
-    # Process inputs
-    if prompts: # batch style
-        processor.tokenizer.padding_side = 'left'
-        inputs = processor(prompts, image, padding=True).to(DEVICE, dtype=torch.bfloat16)
-    else: 
-        inputs = processor(prompt, image).to(DEVICE, dtype=torch.bfloat16)
-    # Get action
-    if 'ecot' in base_vla_name: # ECoT
-        start_time = time.perf_counter()
-        action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, use_cache=True, max_new_tokens=max_new_tokens)
-        infer_time = time.perf_counter() - start_time
-        return infer_time, action, [[]] # action, generated_ids
-    else: # OpenVLA
-        start_time = time.perf_counter()
-        action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)
-        infer_time = time.perf_counter() - start_time
-        return infer_time, action, [[]]
+        # 3. - HF inference
+        # Process inputs
+        if prompts: # batch style
+            processor.tokenizer.padding_side = 'left'
+            inputs = processor(prompts, image, padding=True).to(DEVICE, dtype=torch.bfloat16)
+        else: 
+            inputs = processor(prompt, image).to(DEVICE, dtype=torch.bfloat16)
+        # Get action
+        if 'ecot' in base_vla_name: # ECoT
+            start_time = time.perf_counter()
+            action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, use_cache=True, max_new_tokens=max_new_tokens)
+            infer_time = time.perf_counter() - start_time
+            return infer_time, action, [[]] # action, generated_ids
+        else: # OpenVLA
+            start_time = time.perf_counter()
+            action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)
+            infer_time = time.perf_counter() - start_time
+            return infer_time, action, [[]]
 
 
 def get_vla_action_async(vla, processor, base_vla_name, obs, task_label, unnorm_key, center_crop=False, max_new_tokens=None, prompts=None):
