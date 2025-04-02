@@ -89,6 +89,7 @@ class GenerateConfig:
     seed: int = 7                                    # Random Seed (for reproducibility)
     use_vllm: bool = False
     async_engine: bool = False
+    history_adaptive: bool = False 
     # fmt: on
 
 
@@ -248,9 +249,10 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         max_new_tokens=60,
                     )
                     generated_texts = processor.batch_decode(generated_ids)
-                    for i, generated_text in enumerate(generated_texts[:-1]):
-                        # print("\033[32m" + f"Generated texts: {generated_text}" + "\033[0m")
-                        prompt_manager.update_history(generated_text+" ", i) # since text ends with :
+                    # for i, generated_text in enumerate(generated_texts[:-1]):
+                    #     # print("\033[32m" + f"Generated texts: {generated_text}" + "\033[0m")
+                    #     prompt_manager.update_history(generated_text+" ", i) # since text ends with :
+                    prompt_manager.batch_update_history(generated_texts)
                     generated_text = generated_texts[-1]
 
                 # Save reasoning results

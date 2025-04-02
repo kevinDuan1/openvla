@@ -68,6 +68,13 @@ python experiments/robot/libero/run_libero_eval_async.py \
   --use_vllm True \
   --history_adaptive True 
 
+#eval async 
+python experiments/robot/libero/run_libero_eval_async.py \
+  --model_family openvla \
+  --pretrained_checkpoint leepanic/ecot-libero-object-r400 \
+  --task_suite_name libero_object \
+  --use_vllm True \
+  --history_adaptive True 
 
 # droid evaluation
 python experiments/robot/droid/run_droid_eval.py --pretrained_checkpoint /media/monkgogi/KINGSTON\ 2T/models/openvla-7b+custom_droid_rlds_dataset+b2+lr-0.0005+lora-r32+dropout-0.0--image_aug

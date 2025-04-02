@@ -416,8 +416,8 @@ class PromptManager(object):
         for i in range(start_tag_id, end_tag_id):
             start_idx = generated_text.find(cottag_list[i].value)
             end_idx = generated_text.find(cottag_list[i+1].value)
-            print(f'\033[92m {generated_text} \033[0m')
-            print(f'\033[92m cotag {cottag_list[i].value} start: {start_idx}, end: {end_idx}\033[0m')
+            # print(f'\033[92m {generated_text} \033[0m')
+            # print(f'\033[92m cotag {cottag_list[i].value} start: {start_idx}, end: {end_idx}\033[0m')
             if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
                 subtask_text =  generated_text[start_idx+len(cottag_list[i].value):end_idx]
                 if subtask_text != self.subtask_history[cottag_list[i].name][-1]:
