@@ -76,7 +76,7 @@ class GenerateConfig:
     task_suite_name: str = "libero_spatial"          # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
     num_steps_wait: int = 10                         # Number of steps to wait for objects to stabilize in sim
     num_trials_per_task: int = 5                    # Number of rollouts per task
-
+                       # Whether to use adaptive history length for ECoT
     #################################################################################################################
     # Utils
     #################################################################################################################
@@ -90,6 +90,7 @@ class GenerateConfig:
     seed: int = 7                                    # Random Seed (for reproducibility)
     use_vllm: bool = False
     async_engine: bool = True
+    history_adaptive: bool = False 
     # fmt: on
 
 
@@ -179,8 +180,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
             obs = env.set_init_state(initial_states[episode_idx])
 
             # M: batch preprations
-            prompt_manager = PromptManager()
-
+            prompt_manager = PromptManager(history_adaptive=cfg.history_adaptive)
             # Setup
             t = 0
             replay_images = []
@@ -199,6 +199,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
             print(f"Starting episode {task_episodes+1}...")
             log_file.write(f"Starting episode {task_episodes+1}...\n")
             while t < max_steps + cfg.num_steps_wait:
+                torch.cuda.empty_cache()
                 # IMPORTANT: Do nothing for the first few timesteps because the simulator drops objects
                 # and we need to wait for them to fall
                 if t < cfg.num_steps_wait:
@@ -231,6 +232,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         task_description,
                         processor=processor,
                     )
+
                     generated_text = processor.batch_decode(generated_ids)[0]
                     # M: Update prompt history
                     prompt_manager.update_history(generated_text)
@@ -247,9 +249,9 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         max_new_tokens=80,
                     )
                     generated_texts = processor.batch_decode(generated_ids)
-                    for i, generated_text in enumerate(generated_texts[:-1]):
-                        # print(f"\033[91mGenerated texts: {generated_text}\033[0m")
-                        prompt_manager.update_history(generated_text, i)
+                    # for i, generated_text in enumerate(generated_texts[:-1]):
+                    #     prompt_manager.update_history(generated_text, i)
+                    prompt_manager.batch_update_history(generated_texts)
                     generated_text = generated_texts[-1]
 
                 # Save reasoning results
@@ -273,7 +275,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     total_successes += 1
                     break
                 t += 1
-
+                
             task_episodes += 1
             total_episodes += 1
 
@@ -292,14 +294,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
             log_file.write(f"# episodes completed so far: {total_episodes}\n")
             log_file.write(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)\n")
             log_file.flush()
-
-            # clear KV cache
-            # time.sleep(5)
-            # model.language_model.engine.sleep(level=2)
-            # model.language_model.engine.wake_up()
-
-        # if cfg.use_vllm:
-        #     model = hf_to_vllm(model, processor, cfg)
 
         # Log final results
         print(f"Current task success rate: {float(task_successes) / float(task_episodes)}")

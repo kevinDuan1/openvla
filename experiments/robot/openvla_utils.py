@@ -27,7 +27,7 @@ from experiments.robot.async_utils import (
 ACTION_DIM = 7
 DATE = time.strftime("%Y_%m_%d-%H_%M_%S")
 DATE_TIME = time.strftime("%Y_%m_%d-%H_%M_%S")
-DEVICE = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 np.set_printoptions(formatter={"float": lambda x: "{0:0.3f}".format(x)})
 
 # Initialize system prompt for OpenVLA v0.1.
@@ -114,12 +114,12 @@ def hf_to_vllm(vla, processor, cfg):
         vla.language_model  = vllm.AsyncLLMEngine.from_engine_args(
                 vllm.AsyncEngineArgs(
                     model= vllm_model_path,
-                    gpu_memory_utilization=0.62,
-                    preemption_mode="swap",
+                    gpu_memory_utilization=0.7,
+                    preemption_mode='swap',
                     swap_space=12,
                     disable_log_requests=True,
                     enable_prefix_caching=True,
-                    enable_sleep_mode=True,
+                    # enable_sleep_mode=True,
                     # max_num_seqs=128
                 )
         )
@@ -336,6 +336,11 @@ def get_vla_action_async(vla, processor, base_vla_name, obs, task_label, unnorm_
             inputs_reason = [processor.tokenizer(p, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE) for p in prompts_reason]
             inputs_action = [processor.tokenizer(prompts_action, return_tensors=TensorType.PYTORCH)['input_ids'].to(DEVICE)]
             pixel_values = processor.image_processor(image, return_tensors=TensorType.PYTORCH)["pixel_values"].to(DEVICE, dtype=torch.bfloat16)
+            
+            # cpu verision of inputs
+            inputs_action_cpu = inputs_action[0].cpu().numpy().tolist()[0]
+            inputs_reason_cpu = [i.cpu().numpy().tolist()[0] for i in inputs_reason]
+
             # start async tasks
             start_time = time.perf_counter()
             action_task = asyncio.run_coroutine_threadsafe(action_request(vla, vla.language_model, inputs_action, pixel_values, sampling_params), background_loop)
@@ -343,11 +348,13 @@ def get_vla_action_async(vla, processor, base_vla_name, obs, task_label, unnorm_
             while not action_task.done():
                 time.sleep(0.05)
             infer_time = time.perf_counter() - start_time 
-
-            action_ids = inputs_action[0].cpu().numpy().tolist()[0] + action_task.result()[0]
+            action_ids = inputs_action_cpu + action_task.result()[0]
+            
             generated_ids = []
-            for i, o in zip(inputs_reason, get_reason()):
-                generated_ids.append(i[0].cpu().numpy().tolist() + list(o))
+            generated_reason = get_reason()
+            if len(generated_reason) == len(inputs_reason_cpu):
+                for i, o in zip(inputs_reason_cpu, generated_reason):
+                    generated_ids.append(i + list(o))
             generated_ids.append(action_ids)
             # print(f'Get reason {get_reason()}')
             # print(f"Generated ids: {generated_ids}")
@@ -383,8 +390,11 @@ class CotTag(enum.Enum):
 
 class PromptManager(object):
                         
-    def __init__(self, ):
+    def __init__(self, history_adaptive=False):
         # Intialize subtask history
+        self.history_adaptive = history_adaptive
+        self.history_idx = len(CotTag) - 1 
+
         self.subtask_history = dict()
         for t in CotTag:
             self.subtask_history[t.name] = [""]
@@ -406,12 +416,23 @@ class PromptManager(object):
         for i in range(start_tag_id, end_tag_id):
             start_idx = generated_text.find(cottag_list[i].value)
             end_idx = generated_text.find(cottag_list[i+1].value)
-            # print(generated_text)
-            # print(f'\033[92m cotag {cottag_list[i].value} start: {start_idx}, end: {end_idx}\033[0m')
+            print(f'\033[92m {generated_text} \033[0m')
+            print(f'\033[92m cotag {cottag_list[i].value} start: {start_idx}, end: {end_idx}\033[0m')
             if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
                 subtask_text =  generated_text[start_idx+len(cottag_list[i].value):end_idx]
-                # print(f"\033[91m subtext {cottag_list[i].value}: {subtask_text}\033[0m")
-                self.subtask_history[cottag_list[i].name].append(subtask_text)
+                if subtask_text != self.subtask_history[cottag_list[i].name][-1]:
+                    self.subtask_history[cottag_list[i].name].append(subtask_text)
+                    self.history_idx = min(self.history_idx, i)
+                    print(f"\033[91m subtext {cottag_list[i].value}{subtask_text}\033[0m")
+
+    def batch_update_history(self, generated_texts):   
+        """ Update subtask history based on 
+            Args:
+                - index: if index is specified, only extract that subtask
+        """
+        # update history for the last generated text
+        for i, generated_text in enumerate(generated_texts[:-1]):
+            self.update_history(generated_text, i + len(CotTag) - len(generated_texts))     
 
     def generate_prompts(self, task_description):
         """ Generate batch prompts, with history
@@ -420,12 +441,17 @@ class PromptManager(object):
         prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_description.lower()}? ASSISTANT: "
         for i, t in enumerate(CotTag):
             prompt = prompt + t.value
-            prompts.append(prompt)
+            if not self.history_adaptive or i > self.history_idx - 2:
+                prompts.append(prompt)
+                # print(f"\033[93mprompt: {prompt}\033[0m")
             if i == len(CotTag) - 1: break
             try:
                 prompt = prompt + self.subtask_history[t.name][-1] # Use updated history
             except:
                 raise ValueError(f"Subtask {t.name} not found in history, history: {self.subtask_history}")
+        # reset history index
+        self.history_idx = len(CotTag) - 1
+        print(f"\033[91m Promts Length {len(prompts)}\033[0m")
         return prompts
 
     def generate_prompts_faith(self, task_description):
@@ -434,7 +460,7 @@ class PromptManager(object):
         prompts = []
         prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_description.lower()}? ASSISTANT: "
         for i, t in enumerate(CotTag):
-            if i == len(CotTag) - 1: break
+            if i == len(CotTag) - 1: break 
             new_prompt = prompt + "Action: "
             prompts.append(new_prompt)
             prompt = prompt + t.value + self.subtask_history[t.name][-1] # Use updated history

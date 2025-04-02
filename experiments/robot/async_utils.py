@@ -23,27 +23,29 @@ async def engine_inference(
     sampling_params=None,
 ):
     # Visual Feature Extraction (shared across batched lanuaged inputs)
-    patch_features = model.vision_backbone(pixel_values)
-    projected_patch_embeddings = model.projector(patch_features)
-    embds = model.input_embds
-    input_embeddings = [embds(ids) for ids in input_ids]
-    # Build Multimodal Embeddings & Attention Mask =>> Prismatic defaults to inserting after <BOS> token (1:)
-    multimodal_embeddings = [
-        torch.cat([inemb[:, :1, :], projected_patch_embeddings, inemb[:, 1:, :]], dim=1).squeeze(0)
-        for inemb in input_embeddings
-    ]
-    prompt = [[32000] * emb.shape[-2] for emb in multimodal_embeddings]
-    inputs = [{"prompt_token_ids": p, "multi_modal_data": {"image": m}} for p, m in zip(prompt, multimodal_embeddings)]
-    tasks = [asyncio.create_task(run_query(vllm.inputs.TokensPrompt(**q), engine, sampling_params)) for q in inputs]
-    
-    # Use asyncio.gather to maintain input order
-    results_list = await asyncio.gather(*tasks)
-    
-    # If each task returns a list, you can flatten them if needed:
-    results = []
-    for result in results_list:
-        results += result
-
+        # Set model to evaluation mode.
+    model.eval()
+    with torch.no_grad():
+        patch_features = model.vision_backbone(pixel_values)
+        projected_patch_embeddings = model.projector(patch_features)
+        embds = model.input_embds
+        input_embeddings = [embds(ids) for ids in input_ids]
+        # Build Multimodal Embeddings & Attention Mask =>> Prismatic defaults to inserting after <BOS> token (1:)
+        multimodal_embeddings = [
+            torch.cat([inemb[:, :1, :], projected_patch_embeddings, inemb[:, 1:, :]], dim=1).squeeze(0)
+            for inemb in input_embeddings
+        ]
+        prompt = [[32000] * emb.shape[-2] for emb in multimodal_embeddings]
+        inputs = [{"prompt_token_ids": p, "multi_modal_data": {"image": m}} for p, m in zip(prompt, multimodal_embeddings)]
+        tasks = [asyncio.create_task(run_query(vllm.inputs.TokensPrompt(**q), engine, sampling_params)) for q in inputs]
+        
+        # Use asyncio.gather to maintain input order
+        results_list = await asyncio.gather(*tasks)
+        
+        # If each task returns a list, you can flatten them if needed:
+        results = []
+        for result in results_list:
+            results += result
     return results
 
 async def run_query(query, engine, params):
@@ -65,7 +67,6 @@ async def reasoning_request(vla, async_engine, inputs_reasoning, pixel_values, s
     if len(inputs_reasoning) == 0:
         return reasoning_res
     reasoning_res = await engine_inference(vla, async_engine, inputs_reasoning, pixel_values, sampling_params)
-    
 
 def get_reason():
     global reasoning_res

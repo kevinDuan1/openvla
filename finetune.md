@@ -58,13 +58,15 @@ python experiments/robot/libero/run_libero_eval_batch.py \
   --use_vllm True
 
 # async evaluation
+export CUDA_VISIBLE_DEVICES=1
 # use vllm v1
-# 【export VLLM_USE_V1=1
+# export VLLM_USE_V1=1
 python experiments/robot/libero/run_libero_eval_async.py \
   --model_family openvla \
   --pretrained_checkpoint /home/zhekai/code/embodied-CoT/outputs/ecot-openvla-7b-oxe+libero_object_no_noops+b1+lr-0.0005+lora-r32+dropout-0.0 \
   --task_suite_name libero_object \
-  --use_vllm True 
+  --use_vllm True \
+  --history_adaptive True 
 
 
 # droid evaluation
