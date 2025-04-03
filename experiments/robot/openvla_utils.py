@@ -260,14 +260,14 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
     # Get action
     if 'ecot' in base_vla_name: # ECoT
         start_time = time.perf_counter()
-        action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, use_cache=True, max_new_tokens=max_new_tokens)
+        action, generated_ids = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False, use_cache=True, max_new_tokens=max_new_tokens)
         infer_time = time.perf_counter() - start_time
-        return infer_time, action, [[]] # action, generated_ids
+        return infer_time, action, generated_ids # action, generated_ids
     else: # OpenVLA
         start_time = time.perf_counter()
-        action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)
+        action, generated_dis = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)
         infer_time = time.perf_counter() - start_time
-        return infer_time, action, [[]]
+        return infer_time, action, generated_ids
 
 
 # M: batch prediction
