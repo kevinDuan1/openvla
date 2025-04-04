@@ -92,9 +92,10 @@ def hf_to_vllm(vla, processor, cfg):
 
     # Save language model 
     vllm_model_path = f"logs/{cfg.pretrained_checkpoint.replace('/', '_')}-vllm"
-    if not os.path.exists(vllm_model_path):
-        vla.language_model.save_pretrained(vllm_model_path)
-        processor.save_pretrained(vllm_model_path)
+    
+    # if not os.path.exists(vllm_model_path):
+    vla.language_model.save_pretrained(vllm_model_path)
+    processor.save_pretrained(vllm_model_path)
 
     # Load language model with VLLM
     if hasattr(vla, "language_model"):

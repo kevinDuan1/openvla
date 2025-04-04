@@ -65,13 +65,12 @@ python experiments/robot/libero/run_libero_eval_async.py \
   --model_family openvla \
   --pretrained_checkpoint /home/zhekai/code/embodied-CoT/outputs/ecot-openvla-7b-oxe+libero_object_no_noops+b1+lr-0.0005+lora-r32+dropout-0.0 \
   --task_suite_name libero_object \
-  --use_vllm True \
-  --history_adaptive True 
+  --use_vllm True
 
 #eval async 
 python experiments/robot/libero/run_libero_eval_async.py \
   --model_family openvla \
-  --pretrained_checkpoint leepanic/ecot-libero-object-r400 \
+  --pretrained_checkpoint /home/zhekai/.cache/models/ecot-libero-object-r400 \
   --task_suite_name libero_object \
   --use_vllm True \
   --history_adaptive True 
