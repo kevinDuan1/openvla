@@ -227,11 +227,11 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         processor=processor,
                         max_new_tokens=1024,
                     ) 
-                    inference_times.append(inference_time)                 
                     generated_text = processor.batch_decode(generated_ids)[0]
+
+                    # Save reasoning results
                     replay_reasoning.append(generated_text)
-                    print(generated_text)
-                      
+                    inference_times.append(inference_time)                 
                     # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
                     action = normalize_gripper_action(action, binarize=True)
                     
@@ -240,8 +240,11 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     if cfg.model_family == "openvla":
                         action = invert_gripper_action(action)
 
-                    print(f"Inference time: {inference_time:.4f} seconds\n")
-                    print(f"Action: {action}")
+                    # Print
+                    print(f"\nStep: {t}\n{generated_text}")
+                    print(f"Inference time: {inference_time:.4f} seconds")
+                    print(f"Action: {action}\n")
+
                     # Execute action in environment
                     obs, reward, done, info = env.step(action.tolist())
                     if done:
