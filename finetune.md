@@ -32,7 +32,8 @@ Run evaluation in simulation:
   --pretrained_checkpoint /home/zhekai/code/embodied-CoT/outputs/ecot-openvla-7b-oxe+libero_object_no_noops+b1+lr-0.0005+lora-r32+dropout-0.0 \
   --task_suite_name libero_object \
   --center_crop True \
-  --reasoning True
+  --reasoning True \
+  --use_vllm True 
 
 # batched evaluation Torch 
 python experiments/robot/libero/run_libero_eval_batch.py \
@@ -79,4 +80,31 @@ python experiments/robot/libero/run_libero_eval_async.py \
 python experiments/robot/droid/run_droid_eval.py --pretrained_checkpoint /media/monkgogi/KINGSTON\ 2T/models/openvla-7b+custom_droid_rlds_dataset+b2+lr-0.0005+lora-r32+dropout-0.0--image_aug
 
 python experiments/robot/droid/run_droid_eval.py --pretrained_checkpoint logs/openvla-7b+custom_droid_rlds_dataset+b2+lr-0.0005+lora-r32+dropout-0.0--image_aug
+
+
+#baseline
+# Quantization
+
+ python experiments/robot/libero/run_libero_eval_quantization.py \
+  --model_family openvla \
+  --pretrained_checkpoint /home/zhekai/code/embodied-CoT/outputs/ecot-openvla-7b-oxe+libero_object_no_noops+b1+lr-0.0005+lora-r32+dropout-0.0 \
+  --task_suite_name libero_object \
+  --center_crop True \
+  --reasoning True \
+  --use_vllm True 
+
+# 5 step update
+ python experiments/robot/libero/run_libero_eval_5step.py \
+  --model_family openvla \
+  --pretrained_checkpoint /home/zhekai/code/embodied-CoT/outputs/ecot-openvla-7b-oxe+libero_object_no_noops+b1+lr-0.0005+lora-r32+dropout-0.0 \
+  --task_suite_name libero_object \
+  --center_crop True \
+  --use_vllm True 
+
+# Async base 
+python experiments/robot/libero/run_libero_eval_async_base.py \
+  --model_family openvla \
+  --pretrained_checkpoint /home/zhekai/code/embodied-CoT/outputs/ecot-openvla-7b-oxe+libero_object_no_noops+b1+lr-0.0005+lora-r32+dropout-0.0 \
+  --task_suite_name libero_object \
+  --use_vllm True
 ```
