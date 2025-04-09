@@ -90,12 +90,10 @@ def hf_to_vllm(vla, processor, cfg):
     if vla.input_embds is None:
         vla.input_embds = vla.language_model.get_input_embeddings()
 
-    # Save language model 
-    vllm_model_path = f"logs/{cfg.pretrained_checkpoint.replace('/', '_')}-vllm"
-    
-    if not os.path.exists(vllm_model_path):
-        vla.language_model.save_pretrained(vllm_model_path)
-        processor.save_pretrained(vllm_model_path)
+    # Save language model temporarily
+    vllm_model_path = f"tmp/{cfg.pretrained_checkpoint.replace('/', '_')}-vllm"
+    vla.language_model.save_pretrained(vllm_model_path)
+    processor.save_pretrained(vllm_model_path)
 
     # Load language model with VLLM
     if hasattr(vla, "language_model"):
