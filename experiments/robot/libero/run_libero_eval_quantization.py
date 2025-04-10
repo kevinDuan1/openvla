@@ -27,9 +27,9 @@ import draccus
 import numpy as np
 import tqdm
 from libero.libero import benchmark
-import time 
+import time
 import wandb
-import torch
+from experiments.robot.openvla_utils import hf_to_vllm 
 
 # Append current directory so that interpreter can find experiments.robot
 sys.path.append("../..")
@@ -52,8 +52,7 @@ from experiments.robot.robot_utils import (
     set_seed_everywhere,
 )
 
-# M: this prompt manager is specifically designed for ECoT
-from experiments.robot.openvla_utils import hf_to_vllm, PromptManager
+from experiments.robot.openvla_utils import hf_to_vllm 
 
 @dataclass
 class GenerateConfig:
@@ -66,9 +65,10 @@ class GenerateConfig:
     pretrained_checkpoint: Union[str, Path] = ""     # Pretrained checkpoint path
     load_in_8bit: bool = False                       # (For OpenVLA only) Load with 8-bit quantization
     load_in_4bit: bool = False                       # (For OpenVLA only) Load with 4-bit quantization
+    quantization: str = "none"                       
+    
     center_crop: bool = True                         # Center crop? (if trained w/ random crop image aug)
     norm_stats: str = None                 # Normalization stats for OpenVLA
-
     #################################################################################################################
     # LIBERO environment-specific parameters
     #################################################################################################################
@@ -86,10 +86,11 @@ class GenerateConfig:
     wandb_project: str = "YOUR_WANDB_PROJECT"        # Name of W&B project to log to (use default!)
     wandb_entity: str = "YOUR_WANDB_ENTITY"          # Name of entity to log under
 
-    seed: int = 7                                    # Random Seed (for reproducibility)
-    use_vllm: bool = False
-    async_engine: bool = False
-    history_adaptive: bool = False 
+    seed: int = 1                                    # Random Seed (for reproducibility)
+    use_vllm: bool = False                           # Use VLLM for action generation
+    reasoning: bool = False                            # Use reasoning for action generation
+    async_engine: bool = False                           # Use async engine for action generation
+    
     # fmt: on
 
 
@@ -149,14 +150,12 @@ def eval_libero(cfg: GenerateConfig) -> None:
     num_tasks_in_suite = task_suite.n_tasks
     print(f"Task suite: {cfg.task_suite_name}")
     log_file.write(f"Task suite: {cfg.task_suite_name}\n")
-    log_file.write(f"Model configs: {cfg}\n")
 
     # Get expected image dimensions
     resize_size = get_image_resize_size(cfg)
     inference_times = []
     # Start evaluation
     total_episodes, total_successes = 0, 0
-
     for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
         # Get task
         task = task_suite.get_task(task_id)
@@ -179,9 +178,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
             # Set initial states
             obs = env.set_init_state(initial_states[episode_idx])
 
-            # M: batch preprations
-            prompt_manager = PromptManager()
-
             # Setup
             t = 0
             replay_images = []
@@ -200,45 +196,29 @@ def eval_libero(cfg: GenerateConfig) -> None:
             print(f"Starting episode {task_episodes+1}...")
             log_file.write(f"Starting episode {task_episodes+1}...\n")
             while t < max_steps + cfg.num_steps_wait:
-                # IMPORTANT: Do nothing for the first few timesteps because the simulator drops objects
-                # and we need to wait for them to fall
-                if t < cfg.num_steps_wait:
-                    obs, reward, done, info = env.step(get_libero_dummy_action(cfg.model_family))
-                    t += 1
-                    continue
+                try:
+                    # IMPORTANT: Do nothing for the first few timesteps because the simulator drops objects
+                    # and we need to wait for them to fall
+                    if t < cfg.num_steps_wait:
+                        obs, reward, done, info = env.step(get_libero_dummy_action(cfg.model_family))
+                        t += 1
+                        continue
 
-                # Get preprocessed image
-                img = get_libero_image(obs, resize_size)
+                    # Get preprocessed image
+                    img = get_libero_image(obs, resize_size)
 
-                # Save preprocessed image for replay video
-                replay_images.append(img)
+                    # Save preprocessed image for replay video
+                    replay_images.append(img)
 
-                # Prepare observations dict
-                # Note: OpenVLA does not take proprio state as input
-                observation = {
-                    "full_image": img,
-                    "state": np.concatenate(
-                        (obs["robot0_eef_pos"], quat2axisangle(obs["robot0_eef_quat"]), obs["robot0_gripper_qpos"])
-                    ),
-                }
-                
-                # M: first step to predict full CoT
-                # (a way to initialize the history, but can be done in other ways)
-                if t == cfg.num_steps_wait:
-                    inference_time, action, generated_ids = get_action(
-                        cfg,
-                        model,
-                        observation,
-                        task_description,
-                        processor=processor,
-                    )
-
-                    # M: Update prompt history
-                    generated_text = processor.batch_decode(generated_ids)[0]
-                    prompt_manager.update_history(generated_text)
-
-                else:
-                    prompts = prompt_manager.generate_prompts(task_description)
+                    # Prepare observations dict
+                    # Note: OpenVLA does not take proprio state as input
+                    observation = {
+                        "full_image": img,
+                        "state": np.concatenate(
+                            (obs["robot0_eef_pos"], quat2axisangle(obs["robot0_eef_quat"]), obs["robot0_gripper_qpos"])
+                        ),
+                    }
+                    
                     # Query model to get action
                     inference_time, action, generated_ids = get_action(
                         cfg,
@@ -246,40 +226,35 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         observation,
                         task_description,
                         processor=processor,
-                        prompts=prompts, 
-                        max_new_tokens=80,
-                    )
-                    generated_texts = processor.batch_decode(generated_ids)
-                    # for i, generated_text in enumerate(generated_texts[:-1]):
-                    #     # print("\033[32m" + f"Generated texts: {generated_text}" + "\033[0m")
-                    #     prompt_manager.update_history(generated_text+" ", i) # since text ends with :
-                    prompt_manager.batch_update_history(generated_texts)
-                    generated_text = generated_texts[-1]
+                        max_new_tokens=1024,
+                    ) 
+                    inference_times.append(inference_time)                 
+                    generated_text = processor.batch_decode(generated_ids)[0]
+                    replay_reasoning.append(generated_text)
+                    print(generated_text)
+                      
+                    # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
+                    action = normalize_gripper_action(action, binarize=True)
+                    
+                    # [OpenVLA] The dataloader flips the sign of the gripper action to align with other datasets
+                    # (0 = close, 1 = open), so flip it back (-1 = open, +1 = close) before executing the action
+                    if cfg.model_family == "openvla":
+                        action = invert_gripper_action(action)
 
-                # Save reasoning results
-                replay_reasoning.append(generated_text)
-                inference_times.append(inference_time)
+                    print(f"Inference time: {inference_time:.4f} seconds\n")
+                    print(f"Action: {action}")
+                    # Execute action in environment
+                    obs, reward, done, info = env.step(action.tolist())
+                    if done:
+                        task_successes += 1
+                        total_successes += 1
+                        break
+                    t += 1
 
-                # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
-                action = normalize_gripper_action(action, binarize=True)
-
-                # [OpenVLA] The dataloader flips the sign of the gripper action to align with other datasets
-                # (0 = close, 1 = open), so flip it back (-1 = open, +1 = close) before executing the action
-                if cfg.model_family == "openvla":
-                    action = invert_gripper_action(action)
-
-                # Print
-                print(f"\nStep: {t}\n{generated_text}")
-                print(f"Inference time: {inference_time:.4f} seconds")
-                print(f"Action: {action}\n")
-
-                # Execute action in environment
-                obs, reward, done, info = env.step(action.tolist())
-                if done:
-                    task_successes += 1
-                    total_successes += 1
+                except Exception as e:
+                    print(f"Caught exception: {e}")
+                    log_file.write(f"Caught exception: {e}\n")
                     break
-                t += 1
 
             task_episodes += 1
             total_episodes += 1
@@ -313,7 +288,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     f"num_episodes/{task_description}": task_episodes,
                 }
             )
-            
+
     if inference_times:
         total_inference_time = sum(inference_times)
         num_steps = len(inference_times)

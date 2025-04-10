@@ -53,7 +53,7 @@ from experiments.robot.robot_utils import (
 )
 
 # M: this prompt manager is specifically designed for ECoT
-from experiments.robot.openvla_utils import hf_to_vllm, PromptManager
+from experiments.robot.openvla_utils import hf_to_vllm, PromptManager5step
 
 @dataclass
 class GenerateConfig:
@@ -149,7 +149,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
     num_tasks_in_suite = task_suite.n_tasks
     print(f"Task suite: {cfg.task_suite_name}")
     log_file.write(f"Task suite: {cfg.task_suite_name}\n")
-    log_file.write(f"Model configs: {cfg}\n")
 
     # Get expected image dimensions
     resize_size = get_image_resize_size(cfg)
@@ -180,7 +179,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
             obs = env.set_init_state(initial_states[episode_idx])
 
             # M: batch preprations
-            prompt_manager = PromptManager()
+            prompt_manager = PromptManager5step()
 
             # Setup
             t = 0
@@ -247,31 +246,26 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         task_description,
                         processor=processor,
                         prompts=prompts, 
-                        max_new_tokens=80,
+                        max_new_tokens=1024,
                     )
                     generated_texts = processor.batch_decode(generated_ids)
-                    # for i, generated_text in enumerate(generated_texts[:-1]):
-                    #     # print("\033[32m" + f"Generated texts: {generated_text}" + "\033[0m")
-                    #     prompt_manager.update_history(generated_text+" ", i) # since text ends with :
-                    prompt_manager.batch_update_history(generated_texts)
                     generated_text = generated_texts[-1]
+                    prompt_manager.update_history(generated_text)
+                    
 
                 # Save reasoning results
                 replay_reasoning.append(generated_text)
+                print(f"\nStep: {t}\n", generated_text)
+                print(f"Inference time: {inference_time:.4f} seconds")
                 inference_times.append(inference_time)
-
                 # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
                 action = normalize_gripper_action(action, binarize=True)
+                print(f"Action: {action}\n")
 
                 # [OpenVLA] The dataloader flips the sign of the gripper action to align with other datasets
                 # (0 = close, 1 = open), so flip it back (-1 = open, +1 = close) before executing the action
                 if cfg.model_family == "openvla":
                     action = invert_gripper_action(action)
-
-                # Print
-                print(f"\nStep: {t}\n{generated_text}")
-                print(f"Inference time: {inference_time:.4f} seconds")
-                print(f"Action: {action}\n")
 
                 # Execute action in environment
                 obs, reward, done, info = env.step(action.tolist())

@@ -53,7 +53,8 @@ from experiments.robot.robot_utils import (
 )
 
 # M: this prompt manager is specifically designed for ECoT
-from experiments.robot.openvla_utils import hf_to_vllm, PromptManager
+from experiments.robot.openvla_utils import PromptManagerAsyncBase
+from experiments.robot.openvla_utils import hf_to_vllm 
 
 @dataclass
 class GenerateConfig:
@@ -75,7 +76,7 @@ class GenerateConfig:
     task_suite_name: str = "libero_spatial"          # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
     num_steps_wait: int = 10                         # Number of steps to wait for objects to stabilize in sim
     num_trials_per_task: int = 5                    # Number of rollouts per task
-
+                       # Whether to use adaptive history length for ECoT
     #################################################################################################################
     # Utils
     #################################################################################################################
@@ -88,7 +89,7 @@ class GenerateConfig:
 
     seed: int = 7                                    # Random Seed (for reproducibility)
     use_vllm: bool = False
-    async_engine: bool = False
+    async_engine: bool = True
     history_adaptive: bool = False 
     # fmt: on
 
@@ -149,7 +150,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
     num_tasks_in_suite = task_suite.n_tasks
     print(f"Task suite: {cfg.task_suite_name}")
     log_file.write(f"Task suite: {cfg.task_suite_name}\n")
-    log_file.write(f"Model configs: {cfg}\n")
 
     # Get expected image dimensions
     resize_size = get_image_resize_size(cfg)
@@ -180,8 +180,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
             obs = env.set_init_state(initial_states[episode_idx])
 
             # M: batch preprations
-            prompt_manager = PromptManager()
-
+            prompt_manager = PromptManagerAsyncBase()
             # Setup
             t = 0
             replay_images = []
@@ -200,6 +199,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
             print(f"Starting episode {task_episodes+1}...")
             log_file.write(f"Starting episode {task_episodes+1}...\n")
             while t < max_steps + cfg.num_steps_wait:
+                torch.cuda.empty_cache()
                 # IMPORTANT: Do nothing for the first few timesteps because the simulator drops objects
                 # and we need to wait for them to fall
                 if t < cfg.num_steps_wait:
@@ -233,10 +233,9 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         processor=processor,
                     )
 
-                    # M: Update prompt history
                     generated_text = processor.batch_decode(generated_ids)[0]
+                    # M: Update prompt history
                     prompt_manager.update_history(generated_text)
-
                 else:
                     prompts = prompt_manager.generate_prompts(task_description)
                     # Query model to get action
@@ -247,31 +246,27 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         task_description,
                         processor=processor,
                         prompts=prompts, 
-                        max_new_tokens=80,
+                        max_new_tokens=1024,
                     )
                     generated_texts = processor.batch_decode(generated_ids)
                     # for i, generated_text in enumerate(generated_texts[:-1]):
-                    #     # print("\033[32m" + f"Generated texts: {generated_text}" + "\033[0m")
-                    #     prompt_manager.update_history(generated_text+" ", i) # since text ends with :
-                    prompt_manager.batch_update_history(generated_texts)
+                    #     prompt_manager.update_history(generated_text, i)
+                    prompt_manager.update_history(generated_texts[0])
                     generated_text = generated_texts[-1]
 
                 # Save reasoning results
                 replay_reasoning.append(generated_text)
+                print(generated_text)
+                print(f"Inference time: {inference_time:.4f} seconds\n")
                 inference_times.append(inference_time)
-
                 # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
                 action = normalize_gripper_action(action, binarize=True)
+                print(f"Action: {action}\n")
 
                 # [OpenVLA] The dataloader flips the sign of the gripper action to align with other datasets
                 # (0 = close, 1 = open), so flip it back (-1 = open, +1 = close) before executing the action
                 if cfg.model_family == "openvla":
                     action = invert_gripper_action(action)
-
-                # Print
-                print(f"\nStep: {t}\n{generated_text}")
-                print(f"Inference time: {inference_time:.4f} seconds")
-                print(f"Action: {action}\n")
 
                 # Execute action in environment
                 obs, reward, done, info = env.step(action.tolist())
@@ -280,7 +275,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     total_successes += 1
                     break
                 t += 1
-
+                
             task_episodes += 1
             total_episodes += 1
 
@@ -328,9 +323,9 @@ def eval_libero(cfg: GenerateConfig) -> None:
                 "average_inference_time": average_inference_time,
                 "throughput": throughput,
         })
+            
     # Save local log file
     log_file.close()
-
     # Push total metrics and local log file to wandb
     if cfg.use_wandb:
         wandb.log(
@@ -340,7 +335,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
             }
         )
         wandb.save(local_log_filepath)
-
 
 if __name__ == "__main__":
     eval_libero()
