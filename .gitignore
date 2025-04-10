@@ -152,7 +152,7 @@ data/
 rollouts/
 wandb/
 
-tmp/
+tmp*/
 logs/
 dataset
 checkpoints/
