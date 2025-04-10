@@ -382,12 +382,12 @@ def get_vla_action_async(vla, processor, base_vla_name, obs, task_label, unnorm_
 class CotTag(enum.Enum):
     TASK = "TASK:"
     PLAN = "PLAN:"
-    VISIBLE_OBJECTS = "VISIBLE OBJECTS:"
     SUBTASK_REASONING = "SUBTASK REASONING:"
     SUBTASK = "SUBTASK:"
     MOVE_REASONING = "MOVE REASONING:"
     MOVE = "MOVE:"
     GRIPPER_POSITION = "GRIPPER POSITION:"
+    VISIBLE_OBJECTS = "VISIBLE OBJECTS:"
     ACTION = "ACTION:"
 
 class PromptManager(object):

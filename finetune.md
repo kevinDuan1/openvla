@@ -67,7 +67,7 @@ python experiments/robot/libero/run_libero_eval_async.py \
   --task_suite_name libero_object \
   --use_vllm True
 
-#eval async 
+#eval history adaptive
 python experiments/robot/libero/run_libero_eval_async.py \
   --model_family openvla \
   --pretrained_checkpoint /home/zhekai/.cache/models/ecot-libero-object-r400 \
@@ -79,4 +79,22 @@ python experiments/robot/libero/run_libero_eval_async.py \
 python experiments/robot/droid/run_droid_eval.py --pretrained_checkpoint /media/monkgogi/KINGSTON\ 2T/models/openvla-7b+custom_droid_rlds_dataset+b2+lr-0.0005+lora-r32+dropout-0.0--image_aug
 
 python experiments/robot/droid/run_droid_eval.py --pretrained_checkpoint logs/openvla-7b+custom_droid_rlds_dataset+b2+lr-0.0005+lora-r32+dropout-0.0--image_aug
+
+export CUDA_VISIBLE_DEVICES=0,1
+torchrun --standalone --nnodes 1 --nproc-per-node 2 vla-scripts/finetune.py \
+  --vla_path "openvla/openvla-7b" \
+  --data_root_dir dataset/ \
+  --dataset_name custom_droid_rlds_dataset \
+  --run_root_dir logs/ \
+  --adapter_tmp_dir tmp/ \
+  --lora_rank 32 \
+  --batch_size 2 \
+  --max_steps 100000 \
+  --save_steps 10000 \
+  --grad_accumulation_steps 1 \
+  --learning_rate 5e-4 \
+  --image_aug True \
+  --wandb_project OpenVLA \
+  --wandb_entity zhekaiduan2312 
+  
 ```
