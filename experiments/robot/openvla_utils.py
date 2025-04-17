@@ -391,6 +391,16 @@ def get_vla_action_async(vla, processor, base_vla_name, obs, task_label, unnorm_
     
 # M: batch prediction
 class CotTag(enum.Enum):
+    # TASK = "TASK:"
+    # PLAN = "PLAN:"
+    # VISIBLE_OBJECTS = "VISIBLE OBJECTS:"
+    # SUBTASK_REASONING = "SUBTASK REASONING:"
+    # SUBTASK = "SUBTASK:"
+    # MOVE_REASONING = "MOVE REASONING:"
+    # MOVE = "MOVE:"
+    # GRIPPER_POSITION = "GRIPPER POSITION:"
+    # ACTION = "ACTION:"
+
     TASK = "TASK:"
     PLAN = "PLAN:"
     SUBTASK_REASONING = "SUBTASK REASONING:"
@@ -431,7 +441,8 @@ class PromptManager(object):
             start_idx = generated_text.find(cottag_list[i].value)
             end_idx = generated_text.find(cottag_list[i+1].value)
             if end_idx == -1 and cottag_list[i] == CotTag.VISIBLE_OBJECTS: 
-                end_idx = len(generated_text)
+                end_idx = generated_text.rfind(']') + 2
+                generated_text = generated_text[:end_idx - 1] + ' ' 
             # print(f'\033[92m {generated_text} \033[0m')
             # print(f'\033[92m cotag {cottag_list[i].value} start: {start_idx}, end: {end_idx}\033[0m')
             if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
