@@ -149,6 +149,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
     num_tasks_in_suite = task_suite.n_tasks
     print(f"Task suite: {cfg.task_suite_name}")
     log_file.write(f"Task suite: {cfg.task_suite_name}\n")
+    log_file.write(f"Model configs: {cfg}\n")
 
     # Get expected image dimensions
     resize_size = get_image_resize_size(cfg)

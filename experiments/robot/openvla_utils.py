@@ -90,12 +90,10 @@ def hf_to_vllm(vla, processor, cfg):
     if vla.input_embds is None:
         vla.input_embds = vla.language_model.get_input_embeddings()
 
-    # Save language model 
-    vllm_model_path = f"logs/{cfg.pretrained_checkpoint.replace('/', '_')}-vllm"
-    
-    if not os.path.exists(vllm_model_path):
-        vla.language_model.save_pretrained(vllm_model_path)
-        processor.save_pretrained(vllm_model_path)
+    # Save language model temporarily
+    vllm_model_path = f"tmp/{cfg.pretrained_checkpoint.replace('/', '_')}-vllm"
+    vla.language_model.save_pretrained(vllm_model_path)
+    processor.save_pretrained(vllm_model_path)
 
     # Load language model with VLLM
     if hasattr(vla, "language_model"):
@@ -393,6 +391,16 @@ def get_vla_action_async(vla, processor, base_vla_name, obs, task_label, unnorm_
     
 # M: batch prediction
 class CotTag(enum.Enum):
+    # TASK = "TASK:"
+    # PLAN = "PLAN:"
+    # VISIBLE_OBJECTS = "VISIBLE OBJECTS:"
+    # SUBTASK_REASONING = "SUBTASK REASONING:"
+    # SUBTASK = "SUBTASK:"
+    # MOVE_REASONING = "MOVE REASONING:"
+    # MOVE = "MOVE:"
+    # GRIPPER_POSITION = "GRIPPER POSITION:"
+    # ACTION = "ACTION:"
+
     TASK = "TASK:"
     PLAN = "PLAN:"
     SUBTASK_REASONING = "SUBTASK REASONING:"
@@ -432,6 +440,9 @@ class PromptManager(object):
         for i in range(start_tag_id, end_tag_id):
             start_idx = generated_text.find(cottag_list[i].value)
             end_idx = generated_text.find(cottag_list[i+1].value)
+            if end_idx == -1 and cottag_list[i] == CotTag.VISIBLE_OBJECTS: 
+                end_idx = generated_text.rfind(']') + 2
+                generated_text = generated_text[:end_idx - 1] + ' ' 
             # print(f'\033[92m {generated_text} \033[0m')
             # print(f'\033[92m cotag {cottag_list[i].value} start: {start_idx}, end: {end_idx}\033[0m')
             if start_idx != -1 and end_idx != -1 and start_idx < end_idx:

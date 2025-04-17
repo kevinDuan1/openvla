@@ -152,10 +152,11 @@ data/
 rollouts/
 wandb/
 
-tmp/
+tmp*/
 logs/
 dataset
 checkpoints/
 modified_libero_rlds/
 .vscode
 modified_libero_rlds
+download_scripts/
