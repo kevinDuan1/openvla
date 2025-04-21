@@ -45,8 +45,8 @@ class GenerateConfig:
     #################################################################################################################
     # Droid environment-specific parameters
     #################################################################################################################
-    max_steps: int = 120                            # Maximum number of steps to run
-    instruction: str = "place banana on the plate"         # Instruction for the task
+    max_steps: int = 60                      # Maximum number of steps to run
+    instruction: str = "pick up the banana and put it on the plate"         # Instruction for the task
     num_steps_wait: int = 4  
     ema: float = 1                # Exponential moving average for action smoothing
     #################################################################################################################
@@ -163,7 +163,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
         print(f"Step {t} Action: {smooth_action}")
         
         # Sleep to maintain control Hz
-        sleep_left = 1 / env.control_hz - (time.time() - start_time) 
+        sleep_left = 1 / env.control_hz - (time.time() - start_time) + 0.2
         if sleep_left > 0: time.sleep(sleep_left)
         print(f'sleep time: {sleep_left}')
         # Execute action in environment

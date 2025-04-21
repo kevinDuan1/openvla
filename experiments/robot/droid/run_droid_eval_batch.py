@@ -65,8 +65,8 @@ class GenerateConfig:
     #################################################################################################################
     # Droid environment-specific parameters
     #################################################################################################################
-    max_steps: int = 90                            # Maximum number of steps to run
-    instruction: str = "place banana on the plate"         # Instruction for the task
+    max_steps: int = 65                   # Maximum number of steps to run
+    instruction: str = "pick up the banana and put it on the plate"        # Instruction for the task
     num_steps_wait: int = 4  
     #################################################################################################################
     # Utils

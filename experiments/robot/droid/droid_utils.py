@@ -21,18 +21,18 @@ sensor_manager = SensorManager()
 
 def get_droid_env():
     env = RobotEnv(action_space="cartesian_position", gripper_action_space="position", control_hz=5)
-    time.sleep(4)
+    time.sleep(5)
     return env
 
 
 def _resize_image(image, size):
     im = Image.fromarray(image)
-    height, width = image.shape[0] // 2 - 100, image.shape[1] // 2 - 350
+    height, width = 160, image.shape[1] // 2 - 350
     # print(height, width)
     resized_main = tf.image.crop_to_bounding_box(im, 
                                         height, 
                                         width, 
-                                        460, 
+                                        490, 
                                         700)
     resized_main = tf.image.resize(resized_main, [size[0], size[1]], method=tf.image.ResizeMethod.BILINEAR)
     resized_main = tf.cast(resized_main, tf.uint8).numpy()
@@ -246,7 +246,7 @@ def get_metadata(reasoning):
     return metadata
 
 def resize_pos(pos, img_size):
-    return [(x * size) // 256 for x, size in zip(pos, img_size)]
+    return [(x * size) // 224 for x, size in zip(pos, img_size)]
 
 def draw_bboxes(img, bboxes, img_size=(640, 480)):
     for name, bbox in bboxes.items():
