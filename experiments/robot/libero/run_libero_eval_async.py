@@ -256,6 +256,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
 
                 # Save reasoning results
                 replay_reasoning.append(generated_text)
+                print(f'step {t}:')
                 print(generated_text)
                 print(f"Inference time: {inference_time:.4f} seconds\n")
                 inference_times.append(inference_time)

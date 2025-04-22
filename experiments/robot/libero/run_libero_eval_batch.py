@@ -87,7 +87,7 @@ class GenerateConfig:
     wandb_entity: str = "YOUR_WANDB_ENTITY"          # Name of entity to log under
 
     seed: int = 7                                    # Random Seed (for reproducibility)
-    use_vllm: bool = False
+    use_vllm: bool = True
     async_engine: bool = False
     history_adaptive: bool = False 
     # fmt: on

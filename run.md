@@ -42,12 +42,9 @@ python experiments/robot/libero/run_libero_eval_batch.py \
 # batched evaluation VLLM
 python experiments/robot/libero/run_libero_eval_batch.py \
   --model_family openvla \
-  --pretrained_checkpoint /home/zhekai/code/embodied-CoT/outputs/ecot-openvla-7b-oxe+libero_spatial_no_noops+b1+lr-0.0005+lora-r32+dropout-0.0 \
-  --task_suite_name libero_spatial \
-  --center_crop True \
+  --pretrained_checkpoint /home/zhekai/models/ecot-libero-object-r32 \
+  --task_suite_name libero_object \
   --use_vllm True 
-
-
 
 # async evaluation
 export CUDA_VISIBLE_DEVICES=1
@@ -55,7 +52,7 @@ export CUDA_VISIBLE_DEVICES=1
 # export VLLM_USE_V1=1
 python experiments/robot/libero/run_libero_eval_async.py \
   --model_family openvla \
-  --pretrained_checkpoint /home/zhekai/code/embodied-CoT/outputs/ecot-openvla-7b-oxe+libero_object_no_noops+b1+lr-0.0005+lora-r32+dropout-0.0 \
+  --pretrained_checkpoint /home/zhekai/models/ecot-libero-object-r32 \
   --task_suite_name libero_object \
   --use_vllm True
 

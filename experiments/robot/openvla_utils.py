@@ -400,7 +400,106 @@ class CotTag(enum.Enum):
     # MOVE = "MOVE:"
     # GRIPPER_POSITION = "GRIPPER POSITION:"
     # ACTION = "ACTION:"
+    TASK = "TASK:"
+    PLAN = "PLAN:"
+    SUBTASK_REASONING = "SUBTASK REASONING:"
+    SUBTASK = "SUBTASK:"
+    MOVE_REASONING = "MOVE REASONING:"
+    MOVE = "MOVE:"
+    GRIPPER_POSITION = "GRIPPER POSITION:"
+    VISIBLE_OBJECTS = "VISIBLE OBJECTS:"
+    # VISIBLE_OBJECTS_helper_1 = "VISIBLE OBJECTS:"
+    ACTION = "ACTION:"
 
+class PromptManager(object):                
+    def __init__(self, history_adaptive=False):
+        # Intialize subtask history
+        self.history_adaptive = history_adaptive
+        self.cotag = CotTag.__members__.items()
+        self.history_idx = len(self.cotag) - 1 
+        self.subtask_history = dict()
+        
+        for n, t in self.cotag:
+            self.subtask_history[n] = [""]
+
+    def update_history(self, generated_text, index=None):
+        """ Update subtask history based on 
+            Args:
+                - index: if index is specified, only extract that subtask
+        """
+        if index is None: 
+            start_tag_id = 0
+            end_tag_id = len(self.cotag) - 1
+        else:
+            start_tag_id = index
+            end_tag_id = index + 1
+        
+        # Extract
+        cottag_list = list(self.cotag)
+        for i in range(start_tag_id, end_tag_id):
+            j = 1
+            while cottag_list[i][1].value == cottag_list[i+j][1].value:
+                j += 1
+
+            start_idx = generated_text.find(cottag_list[i][1].value)
+            end_idx = generated_text.find(cottag_list[i+j][1].value)
+            # when visible objects is interrupted 
+            if end_idx == -1 and cottag_list[i][1].value == CotTag.VISIBLE_OBJECTS.value: 
+                end_idx = generated_text.rfind(']') + 1
+                generated_text = generated_text[:end_idx]  
+            # print(f'\033[92m {generated_text} \033[0m')
+            # print(f'\033[92m cotag {cottag_list[i].value} start: {start_idx}, end: {end_idx}\033[0m')
+            if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
+                subtask_text =  generated_text[start_idx+len(cottag_list[i][1].value):end_idx]
+                if subtask_text != self.subtask_history[cottag_list[i][0]][-1]:
+                    self.subtask_history[cottag_list[i][0]].append(subtask_text)
+                    self.history_idx = min(self.history_idx, i)
+                    print(f"\033[91m update text {cottag_list[i][0]}{subtask_text}\033[0m")  
+
+    def generate_prompts(self, task_description):
+        """ Generate batch prompts, with history
+        """
+        prompts = []
+        prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_description.lower()}? ASSISTANT: "
+        for i, t in enumerate(self.cotag):
+            prompt = prompt.strip() + ' ' + t[1].value if 'helper' not in t[0] else prompt 
+            # print(f"\033[93mprompt: {t[0]}    {prompt}\033[0m") 
+            if not self.history_adaptive or i > self.history_idx - 2:
+                prompts.append(prompt)
+            if i == len(self.cotag) - 1: break
+            if 'helper' in t[0]:
+                # throw away contents after last tag
+                prompt = prompt[:prompt.find(t[1].value) + len(t[1].value)].strip()
+            prompt = prompt + self.subtask_history[t[0]][-1] # Use updated history
+            
+        # reset history index
+        self.history_idx = len(self.cotag) - 1
+        print(f"\033[91m Promts Length {len(prompts)}\033[0m")
+        return prompts
+    
+    def batch_update_history(self, generated_texts):   
+        """ Update subtask history based on 
+            Args:
+                - index: if index is specified, only extract that subtask
+        """
+        # update history for the last generated text
+        for i, generated_text in enumerate(generated_texts[:-1]):
+            self.update_history(generated_text, i + len(self.cotag) - len(generated_texts))   
+
+    def generate_prompts_faith(self, task_description):
+        """ Generate batch prompts, with history
+        """
+        prompts = []
+        prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_description.lower()}? ASSISTANT: "
+        for i, t in enumerate(self.cotag):
+            if i == len(self.cotag) - 1: break 
+            new_prompt = prompt + "Action: "
+            prompts.append(new_prompt)
+            prompt = prompt + t.value + self.subtask_history[t.name][-1] # Use updated history
+        return prompts
+
+
+class CotTagBase(enum.Enum):
     TASK = "TASK:"
     PLAN = "PLAN:"
     SUBTASK_REASONING = "SUBTASK REASONING:"
@@ -410,96 +509,13 @@ class CotTag(enum.Enum):
     GRIPPER_POSITION = "GRIPPER POSITION:"
     VISIBLE_OBJECTS = "VISIBLE OBJECTS:"
     ACTION = "ACTION:"
-    
-
-class PromptManager(object):
-                        
-    def __init__(self, history_adaptive=False):
-        # Intialize subtask history
-        self.history_adaptive = history_adaptive
-        self.history_idx = len(CotTag) - 1 
-
-        self.subtask_history = dict()
-        for t in CotTag:
-            self.subtask_history[t.name] = [""]
-
-    def update_history(self, generated_text, index=None):
-        """ Update subtask history based on 
-            Args:
-                - index: if index is specified, only extract that subtask
-        """
-        if index is None: 
-            start_tag_id = 0
-            end_tag_id = len(CotTag) - 1
-        else:
-            start_tag_id = index
-            end_tag_id = index + 1
-        
-        # Extract
-        cottag_list = list(CotTag)
-        for i in range(start_tag_id, end_tag_id):
-            start_idx = generated_text.find(cottag_list[i].value)
-            end_idx = generated_text.find(cottag_list[i+1].value)
-            if end_idx == -1 and cottag_list[i] == CotTag.VISIBLE_OBJECTS: 
-                end_idx = generated_text.rfind(']') + 2
-                generated_text = generated_text[:end_idx - 1] + ' ' 
-            # print(f'\033[92m {generated_text} \033[0m')
-            # print(f'\033[92m cotag {cottag_list[i].value} start: {start_idx}, end: {end_idx}\033[0m')
-            if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
-                subtask_text =  generated_text[start_idx+len(cottag_list[i].value):end_idx]
-                if subtask_text != self.subtask_history[cottag_list[i].name][-1]:
-                    self.subtask_history[cottag_list[i].name].append(subtask_text)
-                    self.history_idx = min(self.history_idx, i)
-                    print(f"\033[91m subtext {cottag_list[i].value}{subtask_text}\033[0m")
-
-    def batch_update_history(self, generated_texts):   
-        """ Update subtask history based on 
-            Args:
-                - index: if index is specified, only extract that subtask
-        """
-        # update history for the last generated text
-        for i, generated_text in enumerate(generated_texts[:-1]):
-            self.update_history(generated_text, i + len(CotTag) - len(generated_texts))     
-
-    def generate_prompts(self, task_description):
-        """ Generate batch prompts, with history
-        """
-        prompts = []
-        prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_description.lower()}? ASSISTANT: "
-        for i, t in enumerate(CotTag):
-            prompt = prompt + t.value
-            if not self.history_adaptive or i > self.history_idx - 2:
-                prompts.append(prompt)
-                # print(f"\033[93mprompt: {prompt}\033[0m")
-            if i == len(CotTag) - 1: break
-            try:
-                prompt = prompt + self.subtask_history[t.name][-1] # Use updated history
-            except:
-                raise ValueError(f"Subtask {t.name} not found in history, history: {self.subtask_history}")
-        # reset history index
-        self.history_idx = len(CotTag) - 1
-        print(f"\033[91m Promts Length {len(prompts)}\033[0m")
-        return prompts
-
-    def generate_prompts_faith(self, task_description):
-        """ Generate batch prompts, with history
-        """
-        prompts = []
-        prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_description.lower()}? ASSISTANT: "
-        for i, t in enumerate(CotTag):
-            if i == len(CotTag) - 1: break 
-            new_prompt = prompt + "Action: "
-            prompts.append(new_prompt)
-            prompt = prompt + t.value + self.subtask_history[t.name][-1] # Use updated history
-        return prompts
-
 
 class PromptManager5step(object):
-                        
+                     
     def __init__(self, history_adaptive=False):
         # Intialize subtask history
         self.history_adaptive = history_adaptive
-        self.history_idx = len(CotTag) - 1 
+        self.history_idx = len(CotTagBase) - 1 
         self.start_key = "TASK:"
         self.end_key = "MOVE REASONING:"
         self.subtask_history = ['']
@@ -541,7 +557,7 @@ class PromptManagerAsyncBase(object):
     def __init__(self, history_adaptive=False):
         # Intialize subtask history
         self.history_adaptive = history_adaptive
-        self.history_idx = len(CotTag) - 1 
+        self.history_idx = len(CotTagBase) - 1 
         self.start_key = "TASK:"
         self.end_key = "MOVE REASONING:"
         self.subtask_history = ['']
