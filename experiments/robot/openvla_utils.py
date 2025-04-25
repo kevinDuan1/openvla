@@ -125,13 +125,12 @@ def hf_to_vllm(vla, processor, cfg):
         vla.language_model  = vllm.AsyncLLMEngine.from_engine_args(
                 vllm.AsyncEngineArgs(
                     model= vllm_model_path,
-                    gpu_memory_utilization=0.7,
+                    gpu_memory_utilization=0.8,
                     preemption_mode='swap',
                     swap_space=12,
                     disable_log_requests=True,
                     enable_prefix_caching=True,
                     # enable_sleep_mode=True,
-                    # max_num_seqs=128
                 )
         )
     return vla
@@ -408,7 +407,7 @@ class CotTag(enum.Enum):
     MOVE = "MOVE:"
     GRIPPER_POSITION = "GRIPPER POSITION:"
     VISIBLE_OBJECTS = "VISIBLE OBJECTS:"
-    # VISIBLE_OBJECTS_helper_1 = "VISIBLE OBJECTS:"
+    VISIBLE_OBJECTS_helper_1 = "VISIBLE OBJECTS:"
     ACTION = "ACTION:"
 
 class PromptManager(object):                
@@ -462,7 +461,8 @@ class PromptManager(object):
         prompts = []
         prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_description.lower()}? ASSISTANT: "
         for i, t in enumerate(self.cotag):
-            prompt = prompt.strip() + ' ' + t[1].value if 'helper' not in t[0] else prompt 
+            prompt = prompt.strip() + ' '
+            prompt = prompt + t[1].value if 'helper' not in t[0] else prompt
             # print(f"\033[93mprompt: {t[0]}    {prompt}\033[0m") 
             if not self.history_adaptive or i > self.history_idx - 2:
                 prompts.append(prompt)
