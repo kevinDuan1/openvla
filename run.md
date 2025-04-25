@@ -46,13 +46,19 @@ python experiments/robot/libero/run_libero_eval_batch.py \
   --task_suite_name libero_object \
   --use_vllm True 
 
+python experiments/robot/libero/run_libero_eval_batch.py \
+  --model_family openvla \
+  --pretrained_checkpoint /home/zhekai/models/ecot-libero-goal-r32 \
+  --task_suite_name libero_goal \
+  --use_vllm True 
+
 # async evaluation
 export CUDA_VISIBLE_DEVICES=1
 # use vllm v1
 # export VLLM_USE_V1=1
 python experiments/robot/libero/run_libero_eval_async.py \
   --model_family openvla \
-  --pretrained_checkpoint /home/zhekai/models/ecot-libero-object-r32 \
+  --pretrained_checkpoint /home/zhekai/models/ecot-libero-object-r1024 \
   --task_suite_name libero_object \
   --use_vllm True
 
