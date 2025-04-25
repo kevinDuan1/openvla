@@ -34,7 +34,21 @@ manipulation:
 
 Built on top of [Prismatic VLMs](https://github.com/TRI-ML/prismatic-vlms).
 
-## Getting Started
+## Getting Started| pick up the gray spanner and put it in the basket   | 5
+ | 8/10 |
+| --- | --- | --- |
+| pick up the blue hammer and put it in the basket | 5
+ | 7/10 |
+| pick up the blue squash ball and put it in the basket | 5
+ | 8/10 |
+| pick up the white baseball and put it in the basket | 5
+ | 7/10 |
+| pick up the banana and put it on the plate | 5
+ | 8/10 |
+| pick up the lemon and put it in the cup | sleep time: -4.516802883148193
+
+ | 7/10 |
+|  |  |  |
 
 To get started with loading and running OpenVLA models for inference, we provide a lightweight interface that leverages
 HuggingFace `transformers` AutoClasses, with minimal dependencies.

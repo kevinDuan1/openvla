@@ -39,7 +39,8 @@ class GenerateConfig:
     pretrained_checkpoint: Union[str, Path] = "logs/openvla-7b+custom_droid_rlds_dataset+b2+lr-0.0005+lora-r32+dropout-0.0--image_aug"     # Pretrained checkpoint path
     load_in_8bit: bool = False                       # (For OpenVLA only) Load with 8-bit quantization
     load_in_4bit: bool = False                       # (For OpenVLA only) Load with 4-bit quantization
-
+    quantization: str = "none" 
+    
     center_crop: bool = False                         # Center crop? (if trained w/ random crop image aug)
     unnorm_key: str = "custom_droid_rlds_dataset"                       # Key for action un-normalization (for OpenVLA only)
     #################################################################################################################
