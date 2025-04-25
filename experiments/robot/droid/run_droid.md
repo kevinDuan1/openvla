@@ -24,4 +24,20 @@ python experiments/robot/droid/run_droid_eval_batch.py \
 python experiments/robot/droid/run_droid_eval_async.py \
 --pretrained_checkpoint /home/monkgogi/models/ecot-openvla-7b-oxe+custom_droid_rlds_dataset+b1+lr-0.0005+lora-r32+dropout-0.0 \
 --use_vllm True
+
+#quantization 
+python experiments/robot/droid/run_droid_eval_quantization.py \
+--pretrained_checkpoint /home/monkgogi/models/ecot-openvla-7b-oxe+custom_droid_rlds_dataset+b1+lr-0.0005+lora-r32+dropout-0.0 \
+--use_vllm True
+
+#5step 
+python experiments/robot/droid/run_droid_eval_5step.py \
+--pretrained_checkpoint /home/monkgogi/models/ecot-openvla-7b-oxe+custom_droid_rlds_dataset+b1+lr-0.0005+lora-r32+dropout-0.0 \
+--use_vllm True
+
+#async base  
+python experiments/robot/droid/run_droid_eval_async_base.py \
+--pretrained_checkpoint /home/monkgogi/models/ecot-openvla-7b-oxe+custom_droid_rlds_dataset+b1+lr-0.0005+lora-r32+dropout-0.0 \
+--use_vllm True
+
 ```
