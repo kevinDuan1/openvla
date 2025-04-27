@@ -58,14 +58,14 @@ export CUDA_VISIBLE_DEVICES=1
 # export VLLM_USE_V1=1
 python experiments/robot/libero/run_libero_eval_async.py \
   --model_family openvla \
-  --pretrained_checkpoint /home/zhekai/models/ecot-libero-object-r1024 \
+  --pretrained_checkpoint /home/zhekai/models/ecot-libero-object-r32 \
   --task_suite_name libero_object \
   --use_vllm True
 
 python experiments/robot/libero/run_libero_eval_async.py \
   --model_family openvla \
-  --pretrained_checkpoint /home/zhekai/models/ecot-libero-goal-r32 \
-  --task_suite_name libero_goal \
+  --pretrained_checkpoint /home/zhekai/models/ecot-libero-spatial-r32 \
+  --task_suite_name libero_spatial \
   --use_vllm True
 
 #baseline
