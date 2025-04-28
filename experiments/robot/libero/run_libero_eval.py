@@ -297,8 +297,10 @@ def eval_libero(cfg: GenerateConfig) -> None:
         average_inference_time = total_inference_time / num_steps
         throughput = num_steps / total_inference_time
         print(f"Average inference time: {average_inference_time:.4f} seconds")
+        print(f'Std Dev of inference time: {np.std(inference_times):.4f} seconds')
         print(f"Throughput: {throughput:.2f} steps per second")
         log_file.write(f"Average inference time: {average_inference_time:.4f} seconds\n")
+        log_file.write(f'Std Dev of inference time: {np.std(inference_times):.4f} seconds\n')
         log_file.write(f"Throughput: {throughput:.2f} steps per second\n")
         if cfg.use_wandb:
             wandb.log({

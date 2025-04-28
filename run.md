@@ -87,7 +87,6 @@ python experiments/robot/libero/run_libero_eval_async_base.py \
   --task_suite_name libero_object \
   --use_vllm True
 
-
 # 5 step update
  python experiments/robot/libero/run_libero_eval_5step.py \
   --model_family openvla \
@@ -95,7 +94,5 @@ python experiments/robot/libero/run_libero_eval_async_base.py \
   --task_suite_name libero_object \
   --center_crop True \
   --use_vllm True 
-
-
 ```
 
