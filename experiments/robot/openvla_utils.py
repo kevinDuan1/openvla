@@ -445,9 +445,8 @@ class PromptManager(object):
             # when visible objects is interrupted 
             if end_idx == -1 and cottag_list[i][1].value == CotTag.VISIBLE_OBJECTS.value: 
                 end_idx = generated_text.rfind(']') + 1
-                if end_idx < len(generated_text) and generated_text[end_idx] == ',':
-                    end_idx = end_idx + 1
-
+                # if end_idx < len(generated_text) and generated_text[end_idx] == ',':
+                #     end_idx = end_idx + 1
                 generated_text = generated_text[:end_idx]  
             # print(f'\033[92m {generated_text} \033[0m')
             # print(f'\033[92m cotag {cottag_list[i].value} start: {start_idx}, end: {end_idx}\033[0m')
@@ -468,7 +467,7 @@ class PromptManager(object):
             prompt = prompt = prompt.strip() + ' ' + t[1].value if 'helper' not in t[0] else prompt.strip()
             # print(f"\033[93mprompt: {t[0]}    {prompt}\033[0m") 
             if not self.history_adaptive or i > self.history_idx - 2:
-                prompts.append(prompt) # if 'helper' not in t[0] else prompts.append(prompt + ',')
+                prompts.append(prompt)  if 'helper' not in t[0] else prompts.append(prompt + ',')
             if i == len(self.cotag) - 1: break
             if 'helper' in t[0]:
                 # throw away contents after last tag
