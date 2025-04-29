@@ -22,6 +22,7 @@ from experiments.robot.async_utils import (
     get_reason,
     background_loop
 )
+from experiments.robot.visible_obj_utils import StringDictTracker
 
 # Initialize important constants and pretty-printing mode in NumPy.
 ACTION_DIM = 7
@@ -417,7 +418,7 @@ class PromptManager(object):
         self.cotag = CotTag.__members__.items()
         self.history_idx = len(self.cotag) - 1 
         self.subtask_history = dict()
-        
+        self.visible_objects = StringDictTracker(iou_threshold=0.7)
         for n, t in self.cotag:
             self.subtask_history[n] = [""]
 
@@ -471,8 +472,13 @@ class PromptManager(object):
             if i == len(self.cotag) - 1: break
             if 'helper' in t[0]:
                 # throw away contents after last tag
+                self.visible_objects.update(self.subtask_history[t[0]][-1])
+                self.visible_objects.update(prompt[prompt.find(t[1].value) + len(t[1].value):]) # update visible objects
                 prompt = prompt[:prompt.find(t[1].value) + len(t[1].value)].strip()
-            prompt = prompt + self.subtask_history[t[0]][-1] # Use updated history
+                prompt = prompt + self.visible_objects.current_string
+                # print(f"\033[93mprompt: {t[0]} {prompt}\033[0m")
+            else:
+                prompt = prompt + self.subtask_history[t[0]][-1] # Use updated history
             
         # reset history index
         self.history_idx = len(self.cotag) - 1
