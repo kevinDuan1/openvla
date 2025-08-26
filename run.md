@@ -68,6 +68,10 @@ python experiments/robot/libero/run_libero_eval_async.py \
   --task_suite_name libero_spatial \
   --use_vllm True
 
+
+
+
+
 #baseline
 # Quantization
  python experiments/robot/libero/run_libero_eval_quantization.py \
@@ -77,7 +81,6 @@ python experiments/robot/libero/run_libero_eval_async.py \
   --center_crop True \
   --reasoning True \
   --use_vllm True 
-
 
 # Async base 
 python experiments/robot/libero/run_libero_eval_async_base.py \

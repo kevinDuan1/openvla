@@ -407,7 +407,7 @@ class CotTag(enum.Enum):
     MOVE = "MOVE:"
     GRIPPER_POSITION = "GRIPPER POSITION:"
     VISIBLE_OBJECTS = "VISIBLE OBJECTS:"
-    VISIBLE_OBJECTS_helper_1 = "VISIBLE OBJECTS:"
+    # VISIBLE_OBJECTS_helper_1 = "VISIBLE OBJECTS:"
     ACTION = "ACTION:"
 
 class PromptManager(object):                
