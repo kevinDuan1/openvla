@@ -74,7 +74,7 @@ class GenerateConfig:
     #################################################################################################################
     task_suite_name: str = "libero_spatial"          # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
     num_steps_wait: int = 10                         # Number of steps to wait for objects to stabilize in sim
-    num_trials_per_task: int = 10                    # Number of rollouts per task
+    num_trials_per_task: int = 1                    # Number of rollouts per task
 
     #################################################################################################################
     # Utils
@@ -158,6 +158,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
     total_episodes, total_successes = 0, 0
 
     for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
+        if task_id > 0: break
         # Get task
         task = task_suite.get_task(task_id)
 
@@ -247,7 +248,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         task_description,
                         processor=processor,
                         prompts=prompts, 
-                        max_new_tokens=60,
+                        max_new_tokens=120,
                     )
                     generated_texts = processor.batch_decode(generated_ids)
                     # for i, generated_text in enumerate(generated_texts[:-1]):
