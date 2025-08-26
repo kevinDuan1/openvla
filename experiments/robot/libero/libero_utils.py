@@ -16,6 +16,7 @@ from experiments.robot.robot_utils import (
     DATE,
     DATE_TIME,
 )
+import matplotlib.pyplot as plt
 
 
 def get_libero_env(task, model_family, resolution=256):
@@ -288,3 +289,182 @@ def draw_bboxes(img, bboxes, img_size=(640, 480)):
             1,
             cv2.LINE_AA,
         )
+
+def save_action_plots(rollout_actions, idx, success, task_description, log_file=None):
+    """Saves action plots for temporal stability analysis."""
+    processed_task_description = (
+        task_description.lower().replace(" ", "_").replace("\n", "_")
+        .replace(".", "_")[:50]
+    )
+    rollout_dir = f"./rollouts/{DATE}/{processed_task_description}"
+    os.makedirs(rollout_dir, exist_ok=True)
+    
+    # Convert actions to numpy array if it's a list
+    actions_array = np.array(rollout_actions)
+    
+    # Create figure with subplots for each action dimension
+    num_dims = actions_array.shape[1]
+    fig, axes = plt.subplots(num_dims, 1, figsize=(12, 3*num_dims))
+    if num_dims == 1:
+        axes = [axes]
+    
+    # Action dimension names (assuming 7-D action space)
+    dim_names = [
+        'X Position', 'Y Position', 'Z Position', 
+        'X Rotation', 'Y Rotation', 'Z Rotation', 'Gripper'
+    ]
+    
+    # Plot each action dimension
+    for i in range(num_dims):
+        ax = axes[i]
+        timesteps = np.arange(len(actions_array))
+        ax.plot(timesteps, actions_array[:, i], 'b-', linewidth=2, 
+                label=f'{dim_names[i]}')
+        
+        # Calculate and plot action differences
+        if len(actions_array) > 1:
+            action_diffs = np.diff(actions_array[:, i])
+            ax_twin = ax.twinx()
+            ax_twin.plot(timesteps[1:], np.abs(action_diffs), 'r--', alpha=0.7, 
+                        label='|Action Diff|')
+            ax_twin.set_ylabel('|Action Difference|', color='r')
+            ax_twin.tick_params(axis='y', labelcolor='r')
+            
+            # Add statistics
+            mean_diff = np.mean(np.abs(action_diffs))
+            std_diff = np.std(action_diffs)
+            ax_twin.axhline(y=mean_diff, color='orange', linestyle=':', alpha=0.8, 
+                           label=f'Mean |Diff|: {mean_diff:.4f}')
+        
+        ax.set_xlabel('Timestep')
+        ax.set_ylabel(f'{dim_names[i]} Value')
+        ax.set_title(f'{dim_names[i]} Over Time')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='upper left')
+        if i < num_dims - 1:
+            ax_twin.legend(loc='upper right')
+    
+    # Add overall statistics
+    if len(actions_array) > 1:
+        all_diffs = np.diff(actions_array, axis=0)
+        overall_mean_diff = np.mean(np.abs(all_diffs))
+        overall_std_diff = np.std(all_diffs)
+        
+        fig.suptitle(
+            f'Action Temporal Stability Analysis\n'
+            f'Episode {idx} - Success: {success}\n'
+            f'Overall Mean |Action Diff|: {overall_mean_diff:.4f}, '
+            f'Std: {overall_std_diff:.4f}', 
+            fontsize=14
+        )
+    
+    plt.tight_layout()
+    
+    # Save the plot
+    plot_path = (
+        f"{rollout_dir}/{DATE_TIME}--episode={idx}--success={success}"
+        f"--task={processed_task_description}--actions.png"
+    )
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"Saved action plot at path {plot_path}")
+    if log_file is not None:
+        log_file.write(f"Saved action plot at path {plot_path}\n")
+    
+    # Return statistics for logging
+    if len(actions_array) > 1:
+        all_diffs = np.diff(actions_array, axis=0)
+        return {
+            'mean_action_diff': np.mean(np.abs(all_diffs)),
+            'std_action_diff': np.std(all_diffs),
+            'max_action_diff': np.max(np.abs(all_diffs)),
+            'min_action_diff': np.min(np.abs(all_diffs))
+        }
+    return {}
+
+def save_l1_action_plots(rollout_actions, idx, success, task_description, log_file=None):
+    """Saves L1 distance action plots for temporal stability analysis."""
+    processed_task_description = (
+        task_description.lower().replace(" ", "_").replace("\n", "_")
+        .replace(".", "_")[:50]
+    )
+    rollout_dir = f"./rollouts/{DATE}/{processed_task_description}"
+    os.makedirs(rollout_dir, exist_ok=True)
+    
+    # Convert actions to numpy array if it's a list
+    actions_array = np.array(rollout_actions)
+    
+    # Create figure for L1 distance analysis
+    fig, ax = plt.subplots(1, 1, figsize=(12, 6))
+    
+    # Calculate L1 distances between consecutive actions
+    if len(actions_array) > 1:
+        l1_distances = np.sum(np.abs(np.diff(actions_array, axis=0)), axis=1)
+        timesteps = np.arange(1, len(actions_array))
+        
+        # Plot L1 distances
+        ax.plot(timesteps, l1_distances, 'b-', linewidth=2, label='L1 Distance')
+        
+        # Add statistics
+        mean_l1 = np.mean(l1_distances)
+        std_l1 = np.std(l1_distances)
+        max_l1 = np.max(l1_distances)
+        min_l1 = np.min(l1_distances)
+        
+        # Plot mean line
+        ax.axhline(y=mean_l1, color='orange', linestyle=':', alpha=0.8, 
+                   label=f'Mean L1: {mean_l1:.4f}')
+        
+        # Plot std bands
+        ax.fill_between(timesteps, mean_l1 - std_l1, mean_l1 + std_l1, 
+                       alpha=0.2, color='orange', label=f'±1 Std: {std_l1:.4f}')
+        
+        # Add statistics text
+        stats_text = f'Mean: {mean_l1:.4f}\nStd: {std_l1:.4f}\nMax: {max_l1:.4f}\nMin: {min_l1:.4f}'
+        ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, 
+                verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+        
+        ax.set_xlabel('Timestep')
+        ax.set_ylabel('L1 Distance')
+        ax.set_title(f'L1 Distance Between Consecutive Actions\nEpisode {idx} - Success: {success}')
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        
+        # Add overall statistics to title
+        fig.suptitle(
+            f'L1 Distance Action Stability Analysis\n'
+            f'Episode {idx} - Success: {success}\n'
+            f'Mean L1 Distance: {mean_l1:.4f}, Std: {std_l1:.4f}', 
+            fontsize=14
+        )
+    else:
+        ax.text(0.5, 0.5, 'Not enough actions for L1 analysis', 
+                transform=ax.transAxes, ha='center', va='center')
+        ax.set_title(f'L1 Distance Analysis\nEpisode {idx} - Success: {success}')
+    
+    plt.tight_layout()
+    
+    # Save the plot
+    plot_path = (
+        f"{rollout_dir}/{DATE_TIME}--episode={idx}--success={success}"
+        f"--task={processed_task_description}--l1_actions.png"
+    )
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"Saved L1 action plot at path {plot_path}")
+    if log_file is not None:
+        log_file.write(f"Saved L1 action plot at path {plot_path}\n")
+    
+    # Return statistics for logging
+    if len(actions_array) > 1:
+        all_diffs = np.sum(np.abs(np.diff(actions_array, axis=0)), axis=1)
+        # all_diffs = np.diff(actions_array, axis=0)
+        return {
+            'mean_action_diff': np.mean(np.abs(all_diffs)),
+            'std_action_diff': np.std(all_diffs),
+            'max_action_diff': np.max(np.abs(all_diffs)),
+            'min_action_diff': np.min(np.abs(all_diffs))
+        }
+    return {}

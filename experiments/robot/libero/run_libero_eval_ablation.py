@@ -40,6 +40,7 @@ from experiments.robot.libero.libero_utils import (
     quat2axisangle,
     save_rollout_video,
     save_rollot_reasoning,
+    save_action_plots,
     save_l1_action_plots,
 )
 from experiments.robot.openvla_utils import get_processor
@@ -54,13 +55,11 @@ from experiments.robot.robot_utils import (
 )
 
 # M: this prompt manager is specifically designed for ECoT
-from experiments.robot.openvla_utils import PromptManager
-from experiments.robot.openvla_utils import hf_to_vllm 
+from experiments.robot.openvla_utils import hf_to_vllm, PromptAblation
 
 @dataclass
 class GenerateConfig:
     # fmt: off
-
     #################################################################################################################
     # Model-specific parameters
     #################################################################################################################
@@ -76,8 +75,7 @@ class GenerateConfig:
     #################################################################################################################
     task_suite_name: str = "libero_spatial"          # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
     num_steps_wait: int = 10                         # Number of steps to wait for objects to stabilize in sim
-    num_trials_per_task: int = 1                    # Number of rollouts per task
-                       # Whether to use adaptive history length for ECoT
+    num_trials_per_task: int = 10                   # Number of rollouts per task
     #################################################################################################################
     # Utils
     #################################################################################################################
@@ -87,11 +85,9 @@ class GenerateConfig:
     use_wandb: bool = False                          # Whether to also log results in Weights & Biases
     wandb_project: str = "YOUR_WANDB_PROJECT"        # Name of W&B project to log to (use default!)
     wandb_entity: str = "YOUR_WANDB_ENTITY"          # Name of entity to log under
-
     seed: int = 7                                    # Random Seed (for reproducibility)
-    use_vllm: bool = False
-    async_engine: bool = True
-    history_adaptive: bool = False 
+    use_vllm: bool = True
+    async_engine: bool = False
     # fmt: on
 
 
@@ -160,8 +156,8 @@ def eval_libero(cfg: GenerateConfig) -> None:
     # Collect action stats from all episodes for overall statistics
     all_episode_action_diffs = []
 
+
     for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
-        if task_id > 0: break
         # Get task
         task = task_suite.get_task(task_id)
 
@@ -184,7 +180,8 @@ def eval_libero(cfg: GenerateConfig) -> None:
             obs = env.set_init_state(initial_states[episode_idx])
 
             # M: batch preprations
-            prompt_manager = PromptManager(history_adaptive=cfg.history_adaptive)
+            prompt_manager = PromptAblation()
+
             # Setup
             t = 0
             replay_images = []
@@ -204,7 +201,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
             print(f"Starting episode {task_episodes+1}...")
             log_file.write(f"Starting episode {task_episodes+1}...\n")
             while t < max_steps + cfg.num_steps_wait:
-                torch.cuda.empty_cache()
                 # IMPORTANT: Do nothing for the first few timesteps because the simulator drops objects
                 # and we need to wait for them to fall
                 if t < cfg.num_steps_wait:
@@ -238,9 +234,10 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         processor=processor,
                     )
 
-                    generated_text = processor.batch_decode(generated_ids)[0]
                     # M: Update prompt history
+                    generated_text = processor.batch_decode(generated_ids)[0]
                     prompt_manager.update_history(generated_text)
+
                 else:
                     prompts = prompt_manager.generate_prompts(task_description)
                     # Query model to get action
@@ -251,19 +248,17 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         task_description,
                         processor=processor,
                         prompts=prompts, 
-                        max_new_tokens=120,
+                        max_new_tokens=1024,
                     )
                     generated_texts = processor.batch_decode(generated_ids)
-                    # for i, generated_text in enumerate(generated_texts[:-1]):
-                    #     prompt_manager.update_history(generated_text, i)
-                    prompt_manager.batch_update_history(generated_texts)
                     generated_text = generated_texts[-1]
+                    prompt_manager.update_history(generated_text)
+                    
 
                 # Save reasoning results
                 replay_reasoning.append(generated_text)
-                print(f'step {t}:')
-                print(generated_text)
-                print(f"Inference time: {inference_time:.4f} seconds\n")
+                print(f"\nStep: {t}\n", generated_text)
+                print(f"Inference time: {inference_time:.4f} seconds")
                 inference_times.append(inference_time)
                 
                 # Save action for temporal stability analysis (before normalization)
@@ -285,7 +280,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     total_successes += 1
                     break
                 t += 1
-                
+
             task_episodes += 1
             total_episodes += 1
 
@@ -316,9 +311,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
             log_file.write(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)\n")
             log_file.flush()
 
-            # sleep for a bit to avoid overwhelming the GPU
-            time.sleep(20)
-
         # Log final results
         print(f"Current task success rate: {float(task_successes) / float(task_episodes)}")
         print(f"Current total success rate: {float(total_successes) / float(total_episodes)}")
@@ -348,8 +340,8 @@ def eval_libero(cfg: GenerateConfig) -> None:
             wandb.log({
                 "average_inference_time": average_inference_time,
                 "throughput": throughput,
-        })
-            
+            })
+    
     # Compute overall action stability statistics
     if all_episode_action_diffs:
         mean_action_diff = np.mean(all_episode_action_diffs)
@@ -361,9 +353,11 @@ def eval_libero(cfg: GenerateConfig) -> None:
                 "overall_mean_action_diff": mean_action_diff,
                 "overall_std_action_diff": std_action_diff,
             })
-            
+    
+    
     # Save local log file
     log_file.close()
+
     # Push total metrics and local log file to wandb
     if cfg.use_wandb:
         wandb.log(
@@ -373,6 +367,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
             }
         )
         wandb.save(local_log_filepath)
+
 
 if __name__ == "__main__":
     eval_libero()
