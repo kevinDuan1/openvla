@@ -117,14 +117,9 @@ class PolicyServer:
                 max_new_tokens=self.cfg.max_new_tokens,
             )
             latency = time.perf_counter() - start_time
-
-            # Post-process action like eval (normalize gripper and invert for openvla)
-            # action = normalize_gripper_action(action, binarize=True)
             if type(action) is tuple:
                 action = action[0]
             print(f"Predicted action: {action} (in {latency:.2f}s, infer {infer_time:.2f}s)")
-            if self.cfg.model_family == "openvla":
-                action = invert_gripper_action(action)
 
             if double_encode:
                 return JSONResponse(json_numpy.dumps(action))
