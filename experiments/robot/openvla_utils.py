@@ -499,6 +499,80 @@ class PromptManager(object):
         return prompts
 
 
+#======================================================================================================
+# Ablation 
+#======================================================================================================
+
+
+class PromptAblation(object):
+                     
+    def __init__(self, highlevel_step=5, lowlevel_step=3): #5 2
+        # Intialize subtask history
+        self.history_idx = len(CotTagBase) - 1 
+        self.start_key = "TASK:"
+        self.end_key_mid = "MOVE REASONING:"
+        self.end_key = "ACTION:"
+        self.subtask_history = ['']
+        self.lowlevel_history = ['']  # Add low-level history
+        self.highlevel_step = highlevel_step
+        self.lowlevel_step = lowlevel_step
+        self.update_counter_high = self.highlevel_step - 1
+        self.update_counter_low = self.lowlevel_step - 1
+
+    def update_history(self, generated_text):
+        """ Update subtask history based on 
+            Args:
+                - index: if index is specified, only extract that subtask
+        """
+        # Update high-level history
+        if self.update_counter_high == self.highlevel_step - 1:
+            start_idx = generated_text.find(self.start_key)
+            end_idx = generated_text.find(self.end_key_mid)
+            if start_idx != -1 and end_idx != -1:
+                subtask_text = generated_text[start_idx+len(self.start_key):end_idx]
+                if subtask_text != self.subtask_history[-1]:
+                    self.subtask_history.append(subtask_text)
+                    print(f"\033[91m high-level subtext {self.start_key}{subtask_text}\033[0m") 
+        
+        # Update low-level history
+        if self.update_counter_low == self.lowlevel_step - 1:
+            start_idx = generated_text.find(self.end_key_mid)
+            end_idx = generated_text.find(self.end_key)
+            if start_idx != -1 and end_idx != -1:
+                lowlevel_text = generated_text[start_idx+len(self.end_key_mid):end_idx]
+                if lowlevel_text != self.lowlevel_history[-1]:
+                    self.lowlevel_history.append(lowlevel_text)
+                    print(f"\033[91m low-level subtext {self.end_key_mid}{lowlevel_text}\033[0m") 
+
+    def generate_prompts(self, task_description):
+        """ Generate batch prompts, with history
+        """
+        prompts = []
+        prompt = f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_description.lower()}? ASSISTANT: "    
+        
+        # Handle high-level reasoning
+        if self.update_counter_high != 0:
+            prompt = prompt + self.start_key + self.subtask_history[-1] + self.end_key_mid  # Use updated history
+            self.update_counter_high = self.update_counter_high - 1
+            # Handle low-level reasoning
+            if self.update_counter_low != 0:
+                prompt = prompt + self.lowlevel_history[-1] + self.end_key  # Use updated low-level history
+                self.update_counter_low = self.update_counter_low - 1
+            else:
+                prompt = prompt 
+                self.update_counter_low = self.lowlevel_step - 1
+        else:
+            prompt = prompt + self.start_key 
+            self.update_counter_high = self.highlevel_step - 1
+
+        prompts.append(prompt)
+        print(f"\033[93mprompt: {prompt}\033[0m")
+        # print(f"\033[91m Promts Length {len(prompts)}\033[0m")
+        return prompts
+
+#======================================================================================================
+# Baselines
+#======================================================================================================
 class CotTagBase(enum.Enum):
     TASK = "TASK:"
     PLAN = "PLAN:"

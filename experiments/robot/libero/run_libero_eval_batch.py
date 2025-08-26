@@ -40,6 +40,7 @@ from experiments.robot.libero.libero_utils import (
     quat2axisangle,
     save_rollout_video,
     save_rollot_reasoning,
+    save_l1_action_plots,
 )
 from experiments.robot.openvla_utils import get_processor
 from experiments.robot.robot_utils import (
@@ -74,7 +75,7 @@ class GenerateConfig:
     #################################################################################################################
     task_suite_name: str = "libero_spatial"          # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
     num_steps_wait: int = 10                         # Number of steps to wait for objects to stabilize in sim
-    num_trials_per_task: int = 10                    # Number of rollouts per task
+    num_trials_per_task: int = 1                   # Number of rollouts per task
 
     #################################################################################################################
     # Utils
@@ -156,6 +157,8 @@ def eval_libero(cfg: GenerateConfig) -> None:
     inference_times = []
     # Start evaluation
     total_episodes, total_successes = 0, 0
+    # Collect action stats from all episodes for overall statistics
+    all_episode_action_diffs = []
 
     for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
         # Get task
@@ -186,6 +189,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
             t = 0
             replay_images = []
             replay_reasoning = []
+            replay_actions = []  # Track actions for temporal stability analysis
             if cfg.task_suite_name == "libero_spatial":
                 max_steps = 220  # longest training demo has 193 steps
             elif cfg.task_suite_name == "libero_object":
@@ -259,7 +263,10 @@ def eval_libero(cfg: GenerateConfig) -> None:
                 # Save reasoning results
                 replay_reasoning.append(generated_text)
                 inference_times.append(inference_time)
-
+                
+                # Save action for temporal stability analysis (before normalization)
+                replay_actions.append(action.copy())
+                
                 # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
                 action = normalize_gripper_action(action, binarize=True)
 
@@ -291,6 +298,17 @@ def eval_libero(cfg: GenerateConfig) -> None:
             save_rollot_reasoning(
                 replay_reasoning, replay_images, total_episodes, success=done, task_description=task_description, log_file=log_file
             )
+            
+            # Save action plots for temporal stability analysis
+            if replay_actions:
+                action_stats = save_l1_action_plots(
+                    replay_actions, total_episodes, success=done, 
+                    task_description=task_description, log_file=log_file
+                )
+                # Collect action stability statistics for overall computation
+                if action_stats:
+                    all_episode_action_diffs.append(action_stats['mean_action_diff'])
+                
             # Log current results
             print(f"Success: {done}")
             print(f"# episodes completed so far: {total_episodes}")
@@ -330,6 +348,19 @@ def eval_libero(cfg: GenerateConfig) -> None:
                 "average_inference_time": average_inference_time,
                 "throughput": throughput,
         })
+    
+    # Compute overall action stability statistics
+    if all_episode_action_diffs:
+        mean_action_diff = np.mean(all_episode_action_diffs)
+        std_action_diff = np.std(all_episode_action_diffs)
+        print(f"Overall action stability - Mean diff: {mean_action_diff:.4f}, Std diff: {std_action_diff:.4f}")
+        log_file.write(f"Overall action stability - Mean diff: {mean_action_diff:.4f}, Std diff: {std_action_diff:.4f}\n")
+        if cfg.use_wandb:
+            wandb.log({
+                "overall_mean_action_diff": mean_action_diff,
+                "overall_std_action_diff": std_action_diff,
+            })
+    
     # Save local log file
     log_file.close()
 
